@@ -1,6 +1,6 @@
 # Athenas Agent
 
-App desktop local para organizar agentes de código. A Home, o núcleo de PTY e as abas Git/MCP/Skills estão implementados. A organização em grupos e projetos e o orquestrador ainda estão em desenvolvimento; veja [docs/F1.md](docs/F1.md), [docs/F2.md](docs/F2.md) e [docs/F3.md](docs/F3.md).
+App desktop local para organizar agentes de código em grupos e projetos, com terminais reais, ferramentas Git/MCP/Skills e board de orquestração. Veja [docs/F1.md](docs/F1.md), [docs/F2.md](docs/F2.md), [docs/F3.md](docs/F3.md) e [docs/F4.md](docs/F4.md) para as verificações e os limites atuais.
 
 ## Rodar
 

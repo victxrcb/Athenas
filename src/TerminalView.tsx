@@ -9,7 +9,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { CanvasAddon } from '@xterm/addon-canvas';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import type { SessionInfo } from './store';
+import { useAppStore, type SessionInfo } from './store';
 
 type OutputEvent = { id: string; sequence: number; data: string };
 
@@ -24,6 +24,7 @@ export function TerminalView({ session, onStatus }: { session: SessionInfo; onSt
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const fontSize = useAppStore((state) => state.preferences.fontSize);
   const pasteImage = async (event: React.ClipboardEvent<HTMLDivElement>) => {
     const image = [...event.clipboardData.items].find((item) => item.type.startsWith('image/'))?.getAsFile();
     if (!image) return;
@@ -43,7 +44,7 @@ export function TerminalView({ session, onStatus }: { session: SessionInfo; onSt
   useEffect(() => {
     if (!host.current) return;
     const terminal = new Terminal({
-      cursorBlink: true, fontFamily: 'JetBrains Mono, monospace', fontSize: 13, scrollback: 10000,
+      cursorBlink: true, fontFamily: 'JetBrains Mono, monospace', fontSize, scrollback: 10000,
       theme: { background: '#0b0b0d', foreground: '#d8d2c4', cursor: '#8b1e2d', selectionBackground: '#8b1e2d59',
         black: '#17171a', red: '#a74452', green: '#668d6a', yellow: '#ae9258', blue: '#6a7fa0', magenta: '#937096', cyan: '#6b9294', white: '#d8d2c4',
         brightBlack: '#5a5750', brightRed: '#c25a68', brightGreen: '#85ab89', brightYellow: '#c2a96f', brightBlue: '#8ea2bd', brightMagenta: '#aa89ae', brightCyan: '#87adae', brightWhite: '#f1ede4' }
@@ -97,7 +98,7 @@ export function TerminalView({ session, onStatus }: { session: SessionInfo; onSt
     });
     terminal.focus();
     return () => { resize.disconnect(); input.dispose(); void outputListener.then((unlisten) => unlisten()); void statusListener.then((unlisten) => unlisten()); terminal.dispose(); search.current = null; };
-  }, [session.id, onStatus]);
+  }, [session.id, onStatus, fontSize]);
 
   return <div className="terminal-view">
     <div className="terminal-toolbar"><span>{session.agent} · {session.folder}</span><div><span className={`terminal-status ${session.status}`}>{session.status}</span><button onClick={() => setSearchOpen(!searchOpen)}>Buscar <kbd>Ctrl F</kbd></button><button onClick={() => { if (window.confirm('Encerrar este processo?')) void invoke('terminal_stop', { id: session.id }).catch((reason) => setError(String(reason))); }}>Encerrar</button></div></div>

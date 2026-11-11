@@ -1,6 +1,7 @@
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::{fs, sync::Mutex};
+use std::{path::PathBuf, process::Command};
 use tauri::{AppHandle, Manager};
 
 pub struct WorkspaceDb(Mutex<Connection>);
@@ -38,6 +39,7 @@ pub struct Pane {
     pub id: String,
     pub project_id: String,
     pub position: i64,
+    pub pinned: bool,
 }
 
 fn migrate(connection: &Connection) -> Result<(), String> {
@@ -51,7 +53,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 name TEXT NOT NULL, folder TEXT, layout TEXT NOT NULL DEFAULT 'auto', updated_at INTEGER NOT NULL);
             PRAGMA user_version = 1;
             COMMIT;").map_err(|e| e.to_string())?;
-    } else if version != 1 && version != 2 && version != 3 && version != 4 {
+    } else if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 {
         return Err(format!("Versão de banco não suportada: {version}"));
     }
     if version < 2 {
@@ -82,6 +84,12 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             COMMIT;",
             )
             .map_err(|e| e.to_string())?;
+    }
+    if version < 5 {
+        connection.execute_batch("BEGIN;
+            ALTER TABLE panes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+            PRAGMA user_version = 5;
+            COMMIT;").map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -134,7 +142,7 @@ impl WorkspaceDb {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
         let mut panes_query = connection
-            .prepare("SELECT id, project_id, position FROM panes ORDER BY position")
+            .prepare("SELECT id, project_id, position, pinned FROM panes ORDER BY pinned DESC, position")
             .map_err(|e| e.to_string())?;
         let panes = panes_query
             .query_map([], |row| {
@@ -142,6 +150,7 @@ impl WorkspaceDb {
                     id: row.get(0)?,
                     project_id: row.get(1)?,
                     position: row.get(2)?,
+                    pinned: row.get(3)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -291,6 +300,43 @@ pub fn pane_create(
     state.snapshot()
 }
 
+#[tauri::command]
+pub fn pane_set_pinned(state: tauri::State<'_, WorkspaceDb>, id: String, pinned: bool) -> Result<WorkspaceSnapshot, String> {
+    let changed = state.0.lock().map_err(|e| e.to_string())?.execute(
+        "UPDATE panes SET pinned=?1 WHERE id=?2", params![pinned,id]).map_err(|e| e.to_string())?;
+    if changed == 0 { return Err("Painel não encontrado.".into()); }
+    state.snapshot()
+}
+
+#[tauri::command]
+pub fn pane_delete(state: tauri::State<'_, WorkspaceDb>, id: String) -> Result<WorkspaceSnapshot, String> {
+    let connection = state.0.lock().map_err(|e| e.to_string())?;
+    let count: i64 = connection.query_row("SELECT COUNT(*) FROM sessions WHERE pane_id=?1", [&id], |row| row.get(0)).map_err(|e| e.to_string())?;
+    if count > 0 { return Err("Mova ou encerre as sessões deste painel antes de excluí-lo.".into()); }
+    let changed = connection.execute("DELETE FROM panes WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
+    if changed == 0 { return Err("Painel não encontrado.".into()); }
+    drop(connection);
+    state.snapshot()
+}
+
+#[tauri::command]
+pub fn project_open_vscode(folder: String) -> Result<(), String> {
+    let folder = fs::canonicalize(folder).map_err(|_| "Pasta do projeto não encontrada.")?;
+    if !folder.is_dir() { return Err("Pasta do projeto inválida.".into()); }
+    #[cfg(windows)]
+    let candidates: Vec<PathBuf> = [
+        std::env::var_os("LOCALAPPDATA").map(PathBuf::from).map(|path| path.join("Programs/Microsoft VS Code/Code.exe")),
+        std::env::var_os("ProgramFiles").map(PathBuf::from).map(|path| path.join("Microsoft VS Code/Code.exe")),
+    ].into_iter().flatten().collect();
+    #[cfg(not(windows))]
+    let candidates: Vec<PathBuf> = std::env::var_os("PATH").map(|path| std::env::split_paths(&path)
+        .map(|folder| folder.join("code")).collect()).unwrap_or_default();
+    let executable = candidates.into_iter().find(|path| path.is_file())
+        .ok_or("VS Code não encontrado nesta máquina.")?;
+    Command::new(executable).arg(folder).spawn().map_err(|e| format!("Falha ao abrir VS Code: {e}"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,7 +349,7 @@ mod tests {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         connection
             .execute("INSERT INTO groups (id, name) VALUES ('g1', 'Equipe')", [])
             .unwrap();

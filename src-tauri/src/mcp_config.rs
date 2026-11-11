@@ -1,6 +1,8 @@
+use crate::orchestrator::Orchestrator;
 use serde::Serialize;
 use std::{
     fs,
+    hash::{Hash, Hasher},
     io::Write,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -128,7 +130,7 @@ pub fn mcp_config_list(
 }
 
 #[cfg(windows)]
-fn atomic_replace(temp: &Path, target: &Path) -> Result<(), String> {
+pub(crate) fn atomic_replace(temp: &Path, target: &Path) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
@@ -149,7 +151,7 @@ fn atomic_replace(temp: &Path, target: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-fn atomic_replace(temp: &Path, target: &Path) -> Result<(), String> {
+pub(crate) fn atomic_replace(temp: &Path, target: &Path) -> Result<(), String> {
     fs::rename(temp, target).map_err(|e| e.to_string())
 }
 
@@ -198,6 +200,82 @@ pub fn mcp_config_write(
     let (path, _) = config_path(&app, &id, project_folder.as_deref())?;
     write_config(&path, &text)?;
     read_config(&app, &id, project_folder.as_deref())
+}
+
+#[tauri::command]
+pub fn mcp_register_orchestrator(
+    app: AppHandle,
+    orchestrator: tauri::State<'_, Orchestrator>,
+    project_folder: String,
+    agent: String,
+) -> Result<String, String> {
+    let project = fs::canonicalize(&project_folder).map_err(|e| e.to_string())?;
+    if !project.is_dir() {
+        return Err("Projeto inválido.".into());
+    }
+    if agent != "Claude Code" && agent != "Codex" {
+        return Err("Escolha Claude Code ou Codex para líder.".into());
+    }
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let args = vec![
+        "--mcp-stdio".to_string(),
+        orchestrator.db_path().to_string_lossy().into_owned(),
+        project.to_string_lossy().into_owned(),
+    ];
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    project.to_string_lossy().to_lowercase().hash(&mut hasher);
+    let name = format!("athenas_{:08x}", hasher.finish() as u32);
+    if agent == "Claude Code" {
+        let (path, _) = config_path(&app, "claude_user", None)?;
+        let text = fs::read_to_string(&path).unwrap_or_else(|_| empty_text("claude_user").into());
+        let mut config: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("JSON inválido: {e}"))?;
+        let root = config
+            .as_object_mut()
+            .ok_or("Configuração Claude inválida.")?;
+        let servers = root
+            .entry("mcpServers")
+            .or_insert_with(|| serde_json::json!({}));
+        let servers = servers
+            .as_object_mut()
+            .ok_or("mcpServers precisa ser objeto.")?;
+        servers.insert(
+            name.clone(),
+            serde_json::json!({"type":"stdio","command":executable.to_string_lossy(),"args":args}),
+        );
+        write_config(
+            &path,
+            &serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
+        )?;
+    } else {
+        let (path, _) = config_path(&app, "codex_user", None)?;
+        let text = fs::read_to_string(&path).unwrap_or_else(|_| empty_text("codex_user").into());
+        let mut config: toml::Value = text.parse().map_err(|e| format!("TOML inválido: {e}"))?;
+        let root = config
+            .as_table_mut()
+            .ok_or("Configuração Codex inválida.")?;
+        let servers = root
+            .entry("mcp_servers")
+            .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+        let servers = servers
+            .as_table_mut()
+            .ok_or("mcp_servers precisa ser tabela.")?;
+        let mut server = toml::map::Map::new();
+        server.insert(
+            "command".into(),
+            toml::Value::String(executable.to_string_lossy().into_owned()),
+        );
+        server.insert(
+            "args".into(),
+            toml::Value::Array(args.into_iter().map(toml::Value::String).collect()),
+        );
+        servers.insert(name.clone(), toml::Value::Table(server));
+        write_config(
+            &path,
+            &toml::to_string_pretty(&config).map_err(|e| e.to_string())?,
+        )?;
+    }
+    Ok(name)
 }
 
 #[cfg(test)]

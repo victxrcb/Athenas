@@ -1,3 +1,4 @@
+use crate::settings::PreferencesStore;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -49,6 +50,7 @@ pub struct TerminalState {
     saved: Mutex<Vec<SessionInfo>>,
     db: Mutex<Connection>,
     suspended_groups: Mutex<HashSet<String>>,
+    deleted_sessions: Mutex<HashSet<String>>,
     data_dir: PathBuf,
 }
 
@@ -110,11 +112,14 @@ impl TerminalState {
             saved: Mutex::new(saved),
             db: Mutex::new(db),
             suspended_groups: Mutex::new(HashSet::new()),
+            deleted_sessions: Mutex::new(HashSet::new()),
             data_dir,
         }
     }
 
     fn update(&self, info: SessionInfo) -> Result<(), String> {
+        let deleted = self.deleted_sessions.lock().map_err(|e| e.to_string())?;
+        if deleted.contains(&info.id) { return Ok(()); }
         self.db.lock().map_err(|e| e.to_string())?.execute(
             "INSERT INTO sessions (id, agent, folder, command, resume_id, pane_id, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(id) DO UPDATE SET status=excluded.status, resume_id=excluded.resume_id, pane_id=excluded.pane_id",
@@ -169,7 +174,7 @@ fn valid_command(command: &str, agent: &str) -> Result<String, String> {
     Ok(command.into())
 }
 
-fn write_scrollback(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+fn write_scrollback(path: &Path, bytes: &[u8], limit: usize) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -178,10 +183,10 @@ fn write_scrollback(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         .append(true)
         .open(path)?;
     file.write_all(bytes)?;
-    if file.metadata()?.len() as usize > MAX_SCROLLBACK + 64 * 1024 {
+    if file.metadata()?.len() as usize > limit + 64 * 1024 {
         drop(file);
         let all = fs::read(path)?;
-        let tail = &all[all.len().saturating_sub(MAX_SCROLLBACK)..];
+        let tail = &all[all.len().saturating_sub(limit)..];
         fs::write(path, tail)?;
     }
     Ok(())
@@ -196,12 +201,15 @@ pub fn terminal_list(state: tauri::State<'_, TerminalState>) -> Result<Vec<Sessi
 pub fn terminal_start(
     app: AppHandle,
     state: tauri::State<'_, TerminalState>,
+    preferences: tauri::State<'_, PreferencesStore>,
     agent: String,
     folder: String,
     command: String,
     resume_id: Option<String>,
     pane_id: Option<String>,
     resume: bool,
+    mode: Option<String>,
+    initial_prompt: Option<String>,
     cols: u16,
     rows: u16,
 ) -> Result<SessionInfo, String> {
@@ -219,6 +227,17 @@ pub fn terminal_start(
             return Err("O painel pertence a outra pasta.".into());
         }
     }
+    let command = if command.trim().is_empty() {
+        let settings = preferences.snapshot()?;
+        match agent.as_str() {
+            "Claude Code" => settings.claude_command,
+            "Codex" => settings.codex_command,
+            "Shell" => settings.shell_command,
+            _ => return Err("Agente desconhecido.".into()),
+        }
+    } else {
+        command
+    };
     let command = valid_command(&command, &agent)?;
     if !(2..=500).contains(&cols) || !(2..=200).contains(&rows) {
         return Err("Tamanho de terminal inválido.".into());
@@ -242,6 +261,32 @@ pub fn terminal_start(
     }
     for argument in parts.iter().skip(1) {
         builder.arg(argument);
+    }
+    let mode = mode.as_deref().unwrap_or("Normal");
+    if !["Normal", "Plan", "Auto-aceitar"].contains(&mode) {
+        return Err("Modo de sessão inválido.".into());
+    }
+    if agent == "Shell" && mode != "Normal" {
+        return Err("Shell aceita apenas o modo Normal.".into());
+    }
+    if !resume {
+        match (agent.as_str(), mode) {
+            ("Claude Code", "Plan") => builder.args(["--permission-mode", "plan"]),
+            ("Claude Code", "Auto-aceitar") => builder.args(["--permission-mode", "acceptEdits"]),
+            ("Codex", "Plan") => builder.args(["--sandbox", "read-only"]),
+            ("Codex", "Auto-aceitar") => builder.arg("--approve-for-me"),
+            _ => (),
+        }
+        if let Some(prompt) = initial_prompt.as_deref() {
+            if agent == "Shell"
+                || prompt.trim().is_empty()
+                || prompt.len() > 32_000
+                || prompt.contains('\0')
+            {
+                return Err("Prompt inicial inválido para este agente.".into());
+            }
+            builder.arg(prompt);
+        }
     }
     builder.cwd(&folder);
     let resume_id = if agent == "Claude Code" {
@@ -308,6 +353,7 @@ pub fn terminal_start(
     let path = state.log_path(&info.id);
     let id = info.id.clone();
     let app_output = app.clone();
+    let log_preferences = preferences.inner().clone();
     let (sender, receiver) = mpsc::sync_channel::<Vec<u8>>(64);
     thread::spawn(move || {
         let mut reader = reader;
@@ -334,7 +380,11 @@ pub fn terminal_start(
                     }
                 }
             }
-            let _ = write_scrollback(&path, &batch);
+            let limit = log_preferences
+                .snapshot()
+                .map(|settings| settings.scrollback_mb * 1024 * 1024)
+                .unwrap_or(MAX_SCROLLBACK);
+            let _ = write_scrollback(&path, &batch, limit);
             sequence += 1;
             let _ = app_output.emit(
                 "terminal-output",
@@ -352,10 +402,11 @@ pub fn terminal_start(
                 .map(|exit| if exit.success() { "concluído" } else { "erro" })
                 .unwrap_or("erro");
             session.info.status = status.into();
-            let _ = app_output
-                .state::<TerminalState>()
-                .update(session.info.clone());
-            let _ = app_output.emit("terminal-status", session.info.clone());
+            let terminal_state = app_output.state::<TerminalState>();
+            if terminal_state.deleted_sessions.lock().is_ok_and(|deleted| !deleted.contains(&id)) {
+                let _ = terminal_state.update(session.info.clone());
+                let _ = app_output.emit("terminal-status", session.info.clone());
+            }
         }
         if let Ok(mut sessions) = app_output.state::<TerminalState>().sessions.lock() {
             sessions.remove(&id);
@@ -436,6 +487,19 @@ pub fn terminal_stop(state: tauri::State<'_, TerminalState>, id: String) -> Resu
         .ok_or("Sessão encerrada.")?;
     let mut session = session.lock().map_err(|e| e.to_string())?;
     session.child.kill().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn terminal_delete(state: tauri::State<'_, TerminalState>, id: String) -> Result<(), String> {
+    if uuid::Uuid::parse_str(&id).is_err() { return Err("ID inválido.".into()); }
+    state.deleted_sessions.lock().map_err(|e| e.to_string())?.insert(id.clone());
+    if let Some(session) = state.sessions.lock().map_err(|e| e.to_string())?.get(&id).cloned() {
+        let _ = session.lock().map_err(|e| e.to_string())?.child.kill();
+    }
+    state.db.lock().map_err(|e| e.to_string())?.execute("DELETE FROM sessions WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
+    state.saved.lock().map_err(|e| e.to_string())?.retain(|item| item.id != id);
+    let _ = fs::remove_file(state.log_path(&id));
+    Ok(())
 }
 
 #[tauri::command]
@@ -743,7 +807,7 @@ mod tests {
             std::env::temp_dir().join(format!("athenas-scrollback-{}", uuid::Uuid::new_v4()));
         let path = directory.join("output.log");
         let content = vec![b'A'; MAX_SCROLLBACK + 128 * 1024];
-        write_scrollback(&path, &content).unwrap();
+        write_scrollback(&path, &content, MAX_SCROLLBACK).unwrap();
         let saved = fs::read(&path).unwrap();
         assert_eq!(saved.len(), MAX_SCROLLBACK);
         assert!(saved.iter().all(|byte| *byte == b'A'));
