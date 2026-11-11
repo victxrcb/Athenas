@@ -2,10 +2,12 @@ import { create } from 'zustand';
 
 export type Agent = 'Claude Code' | 'Codex' | 'Shell';
 export type Mode = 'Normal' | 'Plan' | 'Auto-aceitar';
-export type SessionInfo = { id: string; agent: Agent; folder: string; command: string; resumeId: string | null; status: string };
+export type SessionInfo = { id: string; agent: Agent; folder: string; command: string; resumeId: string | null; paneId: string | null; status: string };
 export type GroupInfo = { id: string; name: string };
-export type ProjectInfo = { id: string; groupId: string | null; name: string; folder: string | null; layout: 'auto' | 'spotlight' | 'sidebar' | 'grid'; updatedAt: number };
-export type WorkspaceSnapshot = { groups: GroupInfo[]; projects: ProjectInfo[] };
+export type ProjectInfo = { id: string; groupId: string | null; name: string; folder: string | null; layout: 'auto' | 'spotlight' | 'sidebar' | 'grid'; splitRatio: number; updatedAt: number };
+export type PaneInfo = { id: string; projectId: string; position: number };
+export type WorkspaceSnapshot = { groups: GroupInfo[]; projects: ProjectInfo[]; panes: PaneInfo[] };
+export type MemorySnapshot = { totalBytes: number; groups: { groupId: string; bytes: number; suspended: boolean }[] };
 
 type AppState = {
   sessionOpen: boolean;
@@ -15,8 +17,12 @@ type AppState = {
   sessions: SessionInfo[];
   activeSessionId: string | null;
   workspace: WorkspaceSnapshot;
+  memory: MemorySnapshot;
+  setMemory: (memory: MemorySnapshot) => void;
   activeProjectId: string | null;
   paletteOpen: boolean;
+  targetPaneId: string | null;
+  openSessionInPane: (paneId: string) => void;
   setPaletteOpen: (open: boolean) => void;
   setWorkspace: (workspace: WorkspaceSnapshot) => void;
   setActiveProjectId: (id: string | null) => void;
@@ -34,14 +40,16 @@ type AppState = {
 
 export const useAppStore = create<AppState>((set) => ({
   sessionOpen: false, projectOpen: false, groupOpen: false, notice: null, sessions: [], activeSessionId: null,
-  workspace: { groups: [], projects: [] }, activeProjectId: null, paletteOpen: false,
+  workspace: { groups: [], projects: [], panes: [] }, memory: { totalBytes: 0, groups: [] }, activeProjectId: null, paletteOpen: false, targetPaneId: null,
+  setMemory: (memory) => set({ memory }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setWorkspace: (workspace) => set({ workspace }),
   setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
   setSessions: (sessions) => set({ sessions }),
   upsertSession: (session) => set((state) => ({ sessions: [...state.sessions.filter((item) => item.id !== session.id), session] })),
   setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
-  openSession: () => set({ sessionOpen: true }),
+  openSession: () => set({ sessionOpen: true, targetPaneId: null }),
+  openSessionInPane: (targetPaneId) => set({ sessionOpen: true, targetPaneId }),
   closeSession: () => set({ sessionOpen: false }),
   openProject: () => set({ projectOpen: true }),
   closeProject: () => set({ projectOpen: false }),

@@ -19,11 +19,16 @@ pub fn run() {
             terminal::terminal_resize,
             terminal::terminal_scrollback,
             terminal::terminal_stop,
+            terminal::terminal_set_pane,
+            terminal::group_metrics,
+            terminal::group_suspend,
             terminal::terminal_save_image,
             workspace::workspace_list,
             workspace::group_create,
             workspace::project_create,
-            workspace::project_set_layout
+            workspace::project_set_layout,
+            workspace::project_set_split,
+            workspace::pane_create
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Athenas Agent");

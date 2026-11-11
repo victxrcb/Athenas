@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { lazy, Suspense } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -12,6 +12,7 @@ const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ def
 
 const agentOptions: Agent[] = ['Claude Code', 'Codex', 'Shell'];
 const modeOptions: Mode[] = ['Normal', 'Plan', 'Auto-aceitar'];
+const memoryLabel = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 
 function greeting() {
   const hour = new Date().getHours();
@@ -34,7 +35,7 @@ function WindowBar() {
 }
 
 function Sidebar() {
-  const { openSession, openProject, sessions, activeSessionId, setActiveSessionId, upsertSession, setNotice, workspace, activeProjectId, setActiveProjectId, setWorkspace } = useAppStore();
+  const { openSession, openProject, sessions, activeSessionId, setActiveSessionId, upsertSession, setNotice, workspace, activeProjectId, setActiveProjectId, setWorkspace, memory, setMemory } = useAppStore();
   const projectsFor = (groupId: string | null) => workspace.projects.filter((project) => project.groupId === groupId);
   const projectButton = (project: import('./store').ProjectInfo) => <button key={project.id} className={`project-link ${activeProjectId === project.id ? 'selected' : ''}`} onClick={() => { setActiveSessionId(null); setActiveProjectId(project.id); }}><Folder size={14} /><span>{project.name}</span><small>{sessions.filter((session) => session.folder === project.folder).length}</small></button>;
   return <aside className="sidebar">
@@ -48,9 +49,9 @@ function Sidebar() {
       <div className="section-kicker">SEU ESPAÇO</div>
       <button className="new-agent" onClick={openSession}><Plus size={16} /> Novo agente <kbd>Ctrl T</kbd></button>
       <div className="sidebar-heading"><span>PROJETOS</span><button aria-label="Novo projeto" onClick={openProject}><Plus size={15} /></button></div>
-      {workspace.groups.map((group) => <div className="project-group" key={group.id}><div className="project-group-title">{group.name}</div>{projectsFor(group.id).map(projectButton)}</div>)}
+      {workspace.groups.map((group) => { const metric = memory.groups.find((item) => item.groupId === group.id); return <div className="project-group" key={group.id}><div className="project-group-title"><span>{group.name}</span><small>{memoryLabel(metric?.bytes ?? 0)}</small><button aria-label={`${metric?.suspended ? 'Retomar' : 'Suspender'} grupo ${group.name}`} onClick={async () => { if (!isTauri()) return; try { await invoke('group_suspend', { groupId: group.id, suspend: !metric?.suspended }); setMemory(await invoke<import('./store').MemorySnapshot>('group_metrics')); } catch (error) { setNotice(String(error)); } }}>{metric?.suspended ? 'Retomar' : 'Suspender'}</button></div>{projectsFor(group.id).map(projectButton)}</div>; })}
       {projectsFor(null).map(projectButton)}
-      {sessions.length ? <div className="session-list">{sessions.map((session) => <div className="session-row" key={session.id}><button className={activeSessionId === session.id ? 'selected' : ''} onClick={() => { setActiveProjectId(null); setActiveSessionId(session.id); }}><Terminal size={14} /><span>{session.agent}<small>{session.folder.split(/[\\/]/).pop()}</small></span><i className={session.status} title={session.status} /></button>{session.status !== 'rodando' && session.agent !== 'Shell' && <button className="resume-button" onClick={async () => { try { const resumed = await invoke<import('./store').SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, resume: true, cols: 100, rows: 30 }); upsertSession(resumed); setActiveSessionId(resumed.id); } catch (error) { setNotice(String(error)); } }}>Retomar</button>}</div>)}</div> : workspace.projects.length === 0 && <div className="sidebar-empty"><span className="empty-mark">✧</span><p>Seu próximo projeto começa aqui.</p><small>Crie uma sessão para começar.</small></div>}
+      {sessions.length ? <div className="session-list">{sessions.map((session) => <div className="session-row" key={session.id}><button className={activeSessionId === session.id ? 'selected' : ''} onClick={() => { setActiveProjectId(null); setActiveSessionId(session.id); }}><Terminal size={14} /><span>{session.agent}<small>{session.folder.split(/[\\/]/).pop()}</small></span><i className={session.status} title={session.status} /></button>{session.status !== 'rodando' && session.agent !== 'Shell' && <button className="resume-button" onClick={async () => { try { const resumed = await invoke<import('./store').SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, paneId: session.paneId, resume: true, cols: 100, rows: 30 }); upsertSession(resumed); setActiveSessionId(resumed.id); } catch (error) { setNotice(String(error)); } }}>Retomar</button>}</div>)}</div> : workspace.projects.length === 0 && <div className="sidebar-empty"><span className="empty-mark">✧</span><p>Seu próximo projeto começa aqui.</p><small>Crie uma sessão para começar.</small></div>}
     </div>
     <div className="sidebar-bottom"><label className="layout-select"><PanelLeft size={15} /><span>Organização</span><select aria-label="Organização" value={workspace.projects.find((project) => project.id === activeProjectId)?.layout ?? 'auto'} disabled={!activeProjectId} onChange={async (event) => { try { const next = await invoke<WorkspaceSnapshot>('project_set_layout', { id: activeProjectId, layout: event.target.value }); setWorkspace(next); } catch (error) { setNotice(String(error)); } }}><option value="auto">Auto</option><option value="spotlight">Spotlight</option><option value="sidebar">Sidebar</option><option value="grid">Grade</option></select><ChevronDown size={14} /></label><div className="account"><img src={logo} alt="" /><span>conta local <b>· Default</b></span><Settings2 size={15} /></div></div>
   </aside>;
@@ -67,7 +68,7 @@ async function chooseFolder(): Promise<string | null> {
 }
 
 function SessionModal() {
-  const { sessionOpen, closeSession, setNotice, openSession, activeProjectId, workspace } = useAppStore();
+  const { sessionOpen, closeSession, setNotice, openSession, activeProjectId, workspace, targetPaneId, setWorkspace } = useAppStore();
   const [agent, setAgent] = useState<Agent>('Claude Code');
   const [mode, setMode] = useState<Mode>('Normal');
   const [folder, setFolder] = useState('');
@@ -84,9 +85,16 @@ function SessionModal() {
     if (mode !== 'Normal') { setNotice('Os modos Plan e Auto-aceitar ainda não estão disponíveis. Escolha Normal.'); return; }
     if (!isTauri()) { setNotice('Abra o aplicativo desktop para iniciar um terminal real.'); return; }
     try {
-      const session = await invoke<import('./store').SessionInfo>('terminal_start', { agent, folder, command, resumeId: null, resume: false, cols: 100, rows: 30 });
+      let paneId = targetPaneId;
+      const project = workspace.projects.find((item) => item.id === activeProjectId);
+      if (!paneId && project?.folder?.toLowerCase() === folder.toLowerCase()) {
+        const snapshot = await invoke<WorkspaceSnapshot>('pane_create', { projectId: project.id });
+        paneId = snapshot.panes.filter((pane) => pane.projectId === project.id).at(-1)?.id ?? null;
+        setWorkspace(snapshot);
+      }
+      const session = await invoke<import('./store').SessionInfo>('terminal_start', { agent, folder, command, resumeId: null, paneId, resume: false, cols: 100, rows: 30 });
       useAppStore.getState().upsertSession(session);
-      useAppStore.getState().setActiveSessionId(session.id);
+      if (!activeProjectId) useAppStore.getState().setActiveSessionId(session.id);
     } catch (error) { setNotice(String(error)); return; }
     if (!createMore) closeSession();
     else openSession();
@@ -133,9 +141,31 @@ function SmallModal({ kind }: { kind: 'project' | 'group' }) {
 function ProjectWorkspace({ project }: { project: import('./store').ProjectInfo }) {
   const state = useAppStore();
   const sessions = state.sessions.filter((session) => project.folder && session.folder.toLowerCase() === project.folder.toLowerCase());
+  const panes = state.workspace.panes.filter((pane) => pane.projectId === project.id);
+  const legacy = sessions.filter((session) => !session.paneId).map((session, index) => ({ id: session.id, projectId: project.id, position: panes.length + index }));
+  const allPanes = [...panes, ...legacy];
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
-  const visible = project.layout === 'spotlight' || project.layout === 'sidebar' ? sessions.filter((session) => session.id === (spotlightId ?? sessions[0]?.id)) : sessions;
-  return <div className={`project-workspace layout-${project.layout}`}><header><div><span className="section-kicker">PROJETO</span><h1>{project.name}</h1><p>{project.folder || 'Escolha uma pasta ao criar uma sessão.'}</p></div><button className="button-primary" onClick={state.openSession}><Plus size={15} /> Novo agente</button></header>{sessions.length === 0 ? <div className="project-empty"><Terminal size={30} /><h2>Nenhuma sessão neste projeto.</h2><p>Abra um agente na pasta do projeto para começar.</p><button className="button-primary" onClick={state.openSession}>Nova sessão</button></div> : <div className="project-main">{(project.layout === 'spotlight' || project.layout === 'sidebar') && <div className="project-session-nav">{sessions.map((session) => <button key={session.id} className={(spotlightId ?? sessions[0]?.id) === session.id ? 'selected' : ''} onClick={() => setSpotlightId(session.id)}>{session.agent}<small>{session.status}</small></button>)}</div>}<div className="project-grid">{visible.map((session) => <div className="project-pane" key={session.id}>{session.status === 'rodando' ? <Suspense fallback={<div className="terminal-ended">Carregando terminal…</div>}><TerminalView session={session} onStatus={state.upsertSession} /></Suspense> : <div className="terminal-ended"><h2>{session.agent}</h2><p>Sessão {session.status}.</p></div>}</div>)}</div></div>}</div>;
+  const [activeTabs, setActiveTabs] = useState<Record<string, string>>({});
+  const [ratio, setRatio] = useState(project.splitRatio);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+  useEffect(() => setRatio(project.splitRatio), [project.id, project.splitRatio]);
+  const pointerRatio = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (!rect) return ratio;
+    const next = Math.max(0.2, Math.min(0.8, (event.clientX - rect.left) / rect.width));
+    setRatio(next);
+    return next;
+  };
+  const single = project.layout === 'spotlight' || project.layout === 'sidebar';
+  const visible = single ? allPanes.filter((pane) => pane.id === (spotlightId ?? allPanes[0]?.id)) : allPanes;
+  const paneSessions = (id: string) => sessions.filter((session) => session.paneId === id || (!session.paneId && session.id === id));
+  const renderPane = (pane: import('./store').PaneInfo) => {
+    const tabs = paneSessions(pane.id);
+    const active = tabs.find((session) => session.id === activeTabs[pane.id]) ?? tabs[0];
+    return <div className="project-pane" key={pane.id} onDragOver={(event) => { if (panes.some((item) => item.id === pane.id)) event.preventDefault(); }} onDrop={async (event) => { event.preventDefault(); const id = event.dataTransfer.getData('text/plain'); if (!id || !panes.some((item) => item.id === pane.id)) return; try { const moved = await invoke<import('./store').SessionInfo>('terminal_set_pane', { id, paneId: pane.id }); state.upsertSession(moved); setActiveTabs((current) => ({ ...current, [pane.id]: id })); } catch (error) { state.setNotice(String(error)); } }}><div className="pane-tabs">{tabs.map((session) => <button key={session.id} draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', session.id)} className={active?.id === session.id ? 'selected' : ''} onClick={() => setActiveTabs((current) => ({ ...current, [pane.id]: session.id }))}>{session.agent}<span className={session.status} /></button>)}<button className="pane-add" aria-label="Nova sub-aba" onClick={() => panes.some((item) => item.id === pane.id) ? state.openSessionInPane(pane.id) : state.openSession()}><Plus size={13} /></button></div>{active?.status === 'rodando' ? <Suspense fallback={<div className="terminal-ended">Carregando terminal…</div>}><TerminalView session={active} onStatus={state.upsertSession} /></Suspense> : active ? <div className="terminal-ended"><h2>{active.agent}</h2><p>Sessão {active.status}.</p>{active.agent !== 'Shell' && <button className="button-primary" onClick={async () => { try { const resumed = await invoke<import('./store').SessionInfo>('terminal_start', { agent: active.agent, folder: active.folder, command: active.command, resumeId: active.resumeId, paneId: active.paneId, resume: true, cols: 100, rows: 30 }); state.upsertSession(resumed); setActiveTabs((current) => ({ ...current, [pane.id]: resumed.id })); } catch (error) { state.setNotice(String(error)); } }}>Retomar</button>}</div> : <div className="terminal-ended"><p>Painel vazio.</p><button className="button-primary" onClick={() => state.openSessionInPane(pane.id)}>Nova sub-aba</button></div>}</div>;
+  };
+  return <div className={`project-workspace layout-${project.layout}`}><header><div><span className="section-kicker">PROJETO</span><h1>{project.name}</h1><p>{project.folder}</p></div><button className="button-primary" onClick={state.openSession}><Plus size={15} /> Novo agente</button></header>{allPanes.length === 0 ? <div className="project-empty"><Terminal size={30} /><h2>Nenhuma sessão neste projeto.</h2><p>Abra um agente na pasta do projeto para começar.</p><button className="button-primary" onClick={state.openSession}>Nova sessão</button></div> : <div className="project-main">{single && <div className="project-session-nav">{allPanes.map((pane) => <button key={pane.id} className={(spotlightId ?? allPanes[0]?.id) === pane.id ? 'selected' : ''} onClick={() => setSpotlightId(pane.id)}>Painel {pane.position + 1}<small>{paneSessions(pane.id).length} sub-abas</small></button>)}</div>}<div className="project-grid" ref={gridRef} style={project.layout === 'grid' && visible.length > 1 ? { gridTemplateColumns: `${Math.round(ratio * 100)}% ${Math.round((1 - ratio) * 100)}%` } : undefined}>{visible.map(renderPane)}{project.layout === 'grid' && visible.length > 1 && <div className="grid-divider" style={{ left: `${ratio * 100}%` }} role="separator" aria-label="Redimensionar painéis" onPointerDown={(event) => { dragging.current = true; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (dragging.current) pointerRatio(event); }} onPointerUp={(event) => { if (!dragging.current) return; dragging.current = false; const next = pointerRatio(event); void invoke<WorkspaceSnapshot>('project_set_split', { id: project.id, ratio: next }).then(state.setWorkspace).catch((error) => state.setNotice(String(error))); }} />}</div></div>}</div>;
 }
 
 function CommandPalette() {
@@ -166,6 +196,7 @@ export function App() {
   const [reduced, setReduced] = useState(false);
   useEffect(() => { if (isTauri()) void invoke<import('./store').SessionInfo[]>('terminal_list').then(state.setSessions).catch((error) => state.setNotice(String(error))); }, [state.setSessions, state.setNotice]);
   useEffect(() => { if (isTauri()) void invoke<WorkspaceSnapshot>('workspace_list').then(state.setWorkspace).catch((error) => state.setNotice(String(error))); }, [state.setWorkspace, state.setNotice]);
+  useEffect(() => { if (!isTauri()) return; const refresh = () => { void invoke<import('./store').MemorySnapshot>('group_metrics').then(state.setMemory).catch(() => undefined); }; refresh(); const timer = window.setInterval(refresh, 5000); return () => window.clearInterval(timer); }, [state.setMemory]);
   useEffect(() => { const timer = setInterval(() => setDate(new Date()), 60000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -184,8 +215,8 @@ export function App() {
   const activeProject = state.workspace.projects.find((item) => item.id === state.activeProjectId);
   return <div className="app-shell">
     <WindowBar />
-    <div className="workspace"><Sidebar /><main className="main-area"><div className="tab-bar"><div className="history-buttons"><button aria-label="Voltar" disabled><ArrowLeft size={16} /></button><button aria-label="Avançar" disabled><ArrowRight size={16} /></button></div><button className="app-tab" onClick={() => state.setActiveSessionId(null)}><Home size={15} /> Início <span className="tab-count">{state.sessions.filter((item) => item.status === 'rodando').length}</span></button>{activeSession && <div className="app-tab"><Terminal size={15} /> {activeSession.agent}<button aria-label="Ocultar terminal" onClick={() => state.setActiveSessionId(null)}><X size={13} /></button></div>}<button className="tab-plus" aria-label="Nova sessão" onClick={state.openSession}><Plus size={16} /></button><div className="tab-spacer" /><span className="local-badge"><span /> Local</span></div>
-      {activeSession && activeSession.status === 'rodando' ? <Suspense fallback={<div className="terminal-ended">Carregando terminal…</div>}><TerminalView session={activeSession} onStatus={state.upsertSession} /></Suspense> : activeSession ? <div className="terminal-ended"><h2>{activeSession.agent}</h2><p>Esta sessão terminou ({activeSession.status}).</p>{activeSession.agent !== 'Shell' && <button className="button-primary" onClick={async () => { try { const resumed = await invoke<import('./store').SessionInfo>('terminal_start', { agent: activeSession.agent, folder: activeSession.folder, command: activeSession.command, resumeId: activeSession.resumeId, resume: true, cols: 100, rows: 30 }); state.upsertSession(resumed); state.setActiveSessionId(resumed.id); } catch (error) { state.setNotice(String(error)); } }}>Retomar</button>}</div> : activeProject ? <ProjectWorkspace project={activeProject} /> : <div className="home"><div className="hero-art" aria-hidden="true" style={{ backgroundImage: `url(${reduced ? source : ascii})` }} />
+    <div className="workspace"><Sidebar /><main className="main-area"><div className="tab-bar"><div className="history-buttons"><button aria-label="Voltar" disabled><ArrowLeft size={16} /></button><button aria-label="Avançar" disabled><ArrowRight size={16} /></button></div><button className="app-tab" onClick={() => { state.setActiveProjectId(null); state.setActiveSessionId(null); }}><Home size={15} /> Início <span className="tab-count">{state.sessions.filter((item) => item.status === 'rodando').length}</span></button>{activeSession && <div className="app-tab"><Terminal size={15} /> {activeSession.agent}<button aria-label="Ocultar terminal" onClick={() => state.setActiveSessionId(null)}><X size={13} /></button></div>}<button className="tab-plus" aria-label="Nova sessão" onClick={state.openSession}><Plus size={16} /></button><div className="tab-spacer" /><span className="local-badge"><span /> RAM {memoryLabel(state.memory.totalBytes)} · Local</span></div>
+      {activeSession && activeSession.status === 'rodando' ? <Suspense fallback={<div className="terminal-ended">Carregando terminal…</div>}><TerminalView session={activeSession} onStatus={state.upsertSession} /></Suspense> : activeSession ? <div className="terminal-ended"><h2>{activeSession.agent}</h2><p>Esta sessão terminou ({activeSession.status}).</p>{activeSession.agent !== 'Shell' && <button className="button-primary" onClick={async () => { try { const resumed = await invoke<import('./store').SessionInfo>('terminal_start', { agent: activeSession.agent, folder: activeSession.folder, command: activeSession.command, resumeId: activeSession.resumeId, paneId: activeSession.paneId, resume: true, cols: 100, rows: 30 }); state.upsertSession(resumed); state.setActiveSessionId(resumed.id); } catch (error) { state.setNotice(String(error)); } }}>Retomar</button>}</div> : activeProject ? <ProjectWorkspace project={activeProject} /> : <div className="home"><div className="hero-art" aria-hidden="true" style={{ backgroundImage: `url(${reduced ? source : ascii})` }} />
         <div className="home-content"><div className="home-eyebrow"><span className="eyebrow-line" /> O ESPAÇO ENTRE A IDEIA E O FEITO</div><div className="welcome"><img src={logo} alt="Logo Athenas Agent" /><div><div className="wordmark">ATHENAS <span>AGENT</span></div><span>SEU ATELIÊ DE AGENTES</span></div></div><h1>{greeting()}, Victor<span>.</span></h1><div className="date-line"><Clock3 size={15} /> {formatted} <span>·</span> {date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
           <div className="command-box"><div className="command-top"><Command size={16} /><span>NOVO COMANDO</span><span className="command-status">PRONTO PARA COMEÇAR</span></div><textarea aria-label="O que você quer construir?" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="O que você quer construir?" rows={3} /><div className="command-bottom"><SelectField label="Agente" value={agent} options={agentOptions} onChange={setAgent} /><button className="folder-select" onClick={async () => { const result = await chooseFolder(); if (result) setFolder(result); else if (!isTauri()) state.setNotice('Escolha a pasta no aplicativo desktop.'); }}><Folder size={15} /> {folder ? folder.split(/[\\/]/).pop() : 'Pasta'} <ChevronDown size={13} /></button><SelectField label="Modo" value={mode} options={modeOptions} onChange={setMode} /><div className="command-grow" /><button className="send-button" aria-label="Enviar comando" onClick={() => { if (!prompt.trim()) { state.openSession(); return; } state.setNotice('O envio ao agente ainda não está disponível nesta versão. Seu texto permanece nesta caixa.'); }}><Send size={17} /></button></div></div>
           <div className="quick-actions"><button onClick={state.openSession}><Terminal size={16} /> Novo terminal <ArrowUpRight size={14} /></button><button onClick={state.openProject}><Folder size={16} /> Novo projeto <ArrowUpRight size={14} /></button></div>

@@ -20,6 +20,7 @@ pub struct Project {
     pub name: String,
     pub folder: Option<String>,
     pub layout: String,
+    pub split_ratio: f64,
     pub updated_at: i64,
 }
 
@@ -28,6 +29,15 @@ pub struct Project {
 pub struct WorkspaceSnapshot {
     pub groups: Vec<Group>,
     pub projects: Vec<Project>,
+    pub panes: Vec<Pane>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Pane {
+    pub id: String,
+    pub project_id: String,
+    pub position: i64,
 }
 
 fn migrate(connection: &Connection) -> Result<(), String> {
@@ -41,7 +51,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 name TEXT NOT NULL, folder TEXT, layout TEXT NOT NULL DEFAULT 'auto', updated_at INTEGER NOT NULL);
             PRAGMA user_version = 1;
             COMMIT;").map_err(|e| e.to_string())?;
-    } else if version != 1 && version != 2 {
+    } else if version != 1 && version != 2 && version != 3 && version != 4 {
         return Err(format!("Versão de banco não suportada: {version}"));
     }
     if version < 2 {
@@ -51,6 +61,24 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             CREATE TABLE sessions (id TEXT PRIMARY KEY, agent TEXT NOT NULL, folder TEXT NOT NULL,
                 command TEXT NOT NULL, resume_id TEXT, status TEXT NOT NULL);
             PRAGMA user_version = 2;
+            COMMIT;",
+            )
+            .map_err(|e| e.to_string())?;
+    }
+    if version < 3 {
+        connection.execute_batch("BEGIN;
+            CREATE TABLE panes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                position INTEGER NOT NULL);
+            ALTER TABLE sessions ADD COLUMN pane_id TEXT REFERENCES panes(id) ON DELETE SET NULL;
+            PRAGMA user_version = 3;
+            COMMIT;").map_err(|e| e.to_string())?;
+    }
+    if version < 4 {
+        connection
+            .execute_batch(
+                "BEGIN;
+            ALTER TABLE projects ADD COLUMN split_ratio REAL NOT NULL DEFAULT 0.5;
+            PRAGMA user_version = 4;
             COMMIT;",
             )
             .map_err(|e| e.to_string())?;
@@ -89,7 +117,7 @@ impl WorkspaceDb {
             .map_err(|e| e.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
-        let mut projects_query = connection.prepare("SELECT id, group_id, name, folder, layout, updated_at FROM projects ORDER BY updated_at DESC, rowid DESC").map_err(|e| e.to_string())?;
+        let mut projects_query = connection.prepare("SELECT id, group_id, name, folder, layout, split_ratio, updated_at FROM projects ORDER BY updated_at DESC, rowid DESC").map_err(|e| e.to_string())?;
         let projects = projects_query
             .query_map([], |row| {
                 Ok(Project {
@@ -98,13 +126,32 @@ impl WorkspaceDb {
                     name: row.get(2)?,
                     folder: row.get(3)?,
                     layout: row.get(4)?,
-                    updated_at: row.get(5)?,
+                    split_ratio: row.get(5)?,
+                    updated_at: row.get(6)?,
                 })
             })
             .map_err(|e| e.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
-        Ok(WorkspaceSnapshot { groups, projects })
+        let mut panes_query = connection
+            .prepare("SELECT id, project_id, position FROM panes ORDER BY position")
+            .map_err(|e| e.to_string())?;
+        let panes = panes_query
+            .query_map([], |row| {
+                Ok(Pane {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    position: row.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        Ok(WorkspaceSnapshot {
+            groups,
+            projects,
+            panes,
+        })
     }
 }
 
@@ -187,6 +234,63 @@ pub fn project_set_layout(
     state.snapshot()
 }
 
+#[tauri::command]
+pub fn project_set_split(
+    state: tauri::State<'_, WorkspaceDb>,
+    id: String,
+    ratio: f64,
+) -> Result<WorkspaceSnapshot, String> {
+    if !ratio.is_finite() || !(0.2..=0.8).contains(&ratio) {
+        return Err("Divisão inválida.".into());
+    }
+    let changed = state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .execute(
+            "UPDATE projects SET split_ratio=?1 WHERE id=?2",
+            params![ratio, id],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("Projeto não encontrado.".into());
+    }
+    state.snapshot()
+}
+
+#[tauri::command]
+pub fn pane_create(
+    state: tauri::State<'_, WorkspaceDb>,
+    project_id: String,
+) -> Result<WorkspaceSnapshot, String> {
+    let connection = state.0.lock().map_err(|e| e.to_string())?;
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?1)",
+            [&project_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !exists {
+        return Err("Projeto não encontrado.".into());
+    }
+    let position: i64 = connection
+        .query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM panes WHERE project_id = ?1",
+            [&project_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    connection
+        .execute(
+            "INSERT INTO panes (id, project_id, position) VALUES (?1, ?2, ?3)",
+            params![uuid::Uuid::new_v4().to_string(), project_id, position],
+        )
+        .map_err(|e| e.to_string())?;
+    drop(connection);
+    state.snapshot()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,11 +303,20 @@ mod tests {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 4);
         connection
             .execute("INSERT INTO groups (id, name) VALUES ('g1', 'Equipe')", [])
             .unwrap();
         connection.execute("INSERT INTO projects (id, group_id, name, updated_at) VALUES ('p1', 'g1', 'Projeto', 1)", []).unwrap();
         connection.execute("INSERT INTO sessions (id, agent, folder, command, status) VALUES ('s1', 'Shell', 'C:/', 'cmd.exe', 'rodando')", []).unwrap();
+        connection
+            .execute(
+                "INSERT INTO panes (id, project_id, position) VALUES ('pane1', 'p1', 0)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute("UPDATE sessions SET pane_id = 'pane1' WHERE id = 's1'", [])
+            .unwrap();
     }
 }

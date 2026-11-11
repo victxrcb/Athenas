@@ -1,9 +1,9 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -11,6 +11,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use sysinfo::{Pid, System};
 use tauri::{AppHandle, Emitter, Manager};
 
 const MAX_SCROLLBACK: usize = 5 * 1024 * 1024;
@@ -23,6 +24,7 @@ pub struct SessionInfo {
     pub folder: String,
     pub command: String,
     pub resume_id: Option<String>,
+    pub pane_id: Option<String>,
     pub status: String,
 }
 
@@ -39,12 +41,14 @@ struct RunningSession {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn Child + Send + Sync>,
+    pid: Option<u32>,
 }
 
 pub struct TerminalState {
     sessions: Mutex<HashMap<String, Arc<Mutex<RunningSession>>>>,
     saved: Mutex<Vec<SessionInfo>>,
     db: Mutex<Connection>,
+    suspended_groups: Mutex<HashSet<String>>,
     data_dir: PathBuf,
 }
 
@@ -69,12 +73,12 @@ impl TerminalState {
                 .and_then(|bytes| serde_json::from_slice(&bytes).ok())
                 .unwrap_or_default();
             for item in legacy {
-                db.execute("INSERT OR IGNORE INTO sessions (id, agent, folder, command, resume_id, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![item.id, item.agent, item.folder, item.command, item.resume_id, item.status]).expect("cannot migrate sessions");
+                db.execute("INSERT OR IGNORE INTO sessions (id, agent, folder, command, resume_id, pane_id, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![item.id, item.agent, item.folder, item.command, item.resume_id, item.pane_id, item.status]).expect("cannot migrate sessions");
             }
         }
         let mut query = db
-            .prepare("SELECT id, agent, folder, command, resume_id, status FROM sessions")
+            .prepare("SELECT id, agent, folder, command, resume_id, pane_id, status FROM sessions")
             .expect("cannot query sessions");
         let saved: Vec<SessionInfo> = query
             .query_map([], |row| {
@@ -84,7 +88,8 @@ impl TerminalState {
                     folder: row.get(2)?,
                     command: row.get(3)?,
                     resume_id: row.get(4)?,
-                    status: row.get(5)?,
+                    pane_id: row.get(5)?,
+                    status: row.get(6)?,
                 })
             })
             .expect("cannot read sessions")
@@ -104,15 +109,16 @@ impl TerminalState {
             sessions: Mutex::new(HashMap::new()),
             saved: Mutex::new(saved),
             db: Mutex::new(db),
+            suspended_groups: Mutex::new(HashSet::new()),
             data_dir,
         }
     }
 
     fn update(&self, info: SessionInfo) -> Result<(), String> {
         self.db.lock().map_err(|e| e.to_string())?.execute(
-            "INSERT INTO sessions (id, agent, folder, command, resume_id, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(id) DO UPDATE SET status=excluded.status, resume_id=excluded.resume_id",
-            params![info.id, info.agent, info.folder, info.command, info.resume_id, info.status],
+            "INSERT INTO sessions (id, agent, folder, command, resume_id, pane_id, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET status=excluded.status, resume_id=excluded.resume_id, pane_id=excluded.pane_id",
+            params![info.id, info.agent, info.folder, info.command, info.resume_id, info.pane_id, info.status],
         ).map_err(|e| e.to_string())?;
         let mut saved = self.saved.lock().map_err(|e| e.to_string())?;
         if let Some(previous) = saved.iter_mut().find(|item| item.id == info.id) {
@@ -194,11 +200,25 @@ pub fn terminal_start(
     folder: String,
     command: String,
     resume_id: Option<String>,
+    pane_id: Option<String>,
     resume: bool,
     cols: u16,
     rows: u16,
 ) -> Result<SessionInfo, String> {
     let folder = valid_folder(&folder)?;
+    if let Some(pane) = &pane_id {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let pane_folder: String = db
+            .query_row(
+                "SELECT p.folder FROM panes a JOIN projects p ON p.id=a.project_id WHERE a.id=?1",
+                [pane],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Painel não encontrado ou sem pasta.".to_string())?;
+        if !pane_folder.eq_ignore_ascii_case(&folder.to_string_lossy()) {
+            return Err("O painel pertence a outra pasta.".into());
+        }
+    }
     let command = valid_command(&command, &agent)?;
     if !(2..=500).contains(&cols) || !(2..=200).contains(&rows) {
         return Err("Tamanho de terminal inválido.".into());
@@ -268,14 +288,17 @@ pub fn terminal_start(
         folder: folder.to_string_lossy().into_owned(),
         command,
         resume_id,
+        pane_id,
         status: "rodando".into(),
     };
+    let pid = child.process_id();
     state.update(info.clone())?;
     let running = Arc::new(Mutex::new(RunningSession {
         info: info.clone(),
         master: pair.master,
         writer,
         child,
+        pid,
     }));
     state
         .sessions
@@ -416,6 +439,46 @@ pub fn terminal_stop(state: tauri::State<'_, TerminalState>, id: String) -> Resu
 }
 
 #[tauri::command]
+pub fn terminal_set_pane(
+    state: tauri::State<'_, TerminalState>,
+    id: String,
+    pane_id: String,
+) -> Result<SessionInfo, String> {
+    let mut info = state
+        .saved
+        .lock()
+        .map_err(|e| e.to_string())?
+        .iter()
+        .find(|item| item.id == id)
+        .cloned()
+        .ok_or("Sessão não encontrada.")?;
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let pane_folder: String = db
+        .query_row(
+            "SELECT p.folder FROM panes a JOIN projects p ON p.id=a.project_id WHERE a.id=?1",
+            [&pane_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "Painel não encontrado.".to_string())?;
+    if !pane_folder.eq_ignore_ascii_case(&info.folder) {
+        return Err("O painel pertence a outra pasta.".into());
+    }
+    drop(db);
+    info.pane_id = Some(pane_id);
+    if let Some(running) = state
+        .sessions
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&id)
+        .cloned()
+    {
+        running.lock().map_err(|e| e.to_string())?.info.pane_id = info.pane_id.clone();
+    }
+    state.update(info.clone())?;
+    Ok(info)
+}
+
+#[tauri::command]
 pub fn terminal_save_image(
     state: tauri::State<'_, TerminalState>,
     data: String,
@@ -433,6 +496,241 @@ pub fn terminal_save_image(
     fs::create_dir_all(path.parent().ok_or("Pasta inválida.")?).map_err(|e| e.to_string())?;
     fs::write(&path, bytes).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupMemory {
+    group_id: String,
+    bytes: u64,
+    suspended: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemorySnapshot {
+    total_bytes: u64,
+    groups: Vec<GroupMemory>,
+}
+
+fn running_roots(state: &TerminalState) -> Result<Vec<(String, Pid)>, String> {
+    let running: Vec<_> = state
+        .sessions
+        .lock()
+        .map_err(|e| e.to_string())?
+        .values()
+        .cloned()
+        .collect();
+    let mut roots = Vec::new();
+    for item in running {
+        let session = item.lock().map_err(|e| e.to_string())?;
+        if let Some(pid) = session.pid {
+            roots.push((session.info.folder.clone(), Pid::from_u32(pid)));
+        }
+    }
+    Ok(roots)
+}
+
+fn group_for_folder(db: &Connection, folder: &str) -> Result<Option<String>, String> {
+    db.query_row(
+        "SELECT group_id FROM projects WHERE lower(folder) = lower(?1) LIMIT 1",
+        [folder],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .optional()
+    .map(|value| value.flatten())
+    .map_err(|e| e.to_string())
+}
+
+fn process_tree(system: &System, root: Pid) -> Vec<Pid> {
+    let mut tree = vec![root];
+    for _ in 0..16 {
+        let mut changed = false;
+        for (pid, process) in system.processes() {
+            if process
+                .parent()
+                .is_some_and(|parent| tree.contains(&parent))
+                && !tree.contains(pid)
+            {
+                tree.push(*pid);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    tree
+}
+
+#[tauri::command]
+pub fn group_metrics(state: tauri::State<'_, TerminalState>) -> Result<MemorySnapshot, String> {
+    let system = System::new_all();
+    let roots = running_roots(&state)?;
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let suspended = state.suspended_groups.lock().map_err(|e| e.to_string())?;
+    let mut groups = HashMap::<String, u64>::new();
+    let mut query = db
+        .prepare("SELECT id FROM groups")
+        .map_err(|e| e.to_string())?;
+    for id in query
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+    {
+        groups.insert(id.map_err(|e| e.to_string())?, 0);
+    }
+    drop(query);
+    let mut seen = HashSet::new();
+    let mut total_bytes = 0;
+    for (folder, root) in roots {
+        let group = group_for_folder(&db, &folder)?;
+        for pid in process_tree(&system, root) {
+            if !seen.insert(pid) {
+                continue;
+            }
+            let bytes = system.process(pid).map_or(0, |process| process.memory());
+            total_bytes += bytes;
+            if let Some(id) = &group {
+                *groups.entry(id.clone()).or_default() += bytes;
+            }
+        }
+    }
+    Ok(MemorySnapshot {
+        total_bytes,
+        groups: groups
+            .into_iter()
+            .map(|(group_id, bytes)| GroupMemory {
+                suspended: suspended.contains(&group_id),
+                group_id,
+                bytes,
+            })
+            .collect(),
+    })
+}
+
+#[cfg(windows)]
+fn change_process_state(pid: Pid, suspend: bool) -> Result<(), String> {
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        System::{
+            ProcessStatus::EmptyWorkingSet,
+            Threading::{
+                OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA,
+                PROCESS_SUSPEND_RESUME,
+            },
+        },
+    };
+    #[link(name = "ntdll")]
+    unsafe extern "system" {
+        fn NtSuspendProcess(process: windows_sys::Win32::Foundation::HANDLE) -> i32;
+        fn NtResumeProcess(process: windows_sys::Win32::Foundation::HANDLE) -> i32;
+    }
+    let handle = unsafe {
+        OpenProcess(
+            PROCESS_SUSPEND_RESUME | PROCESS_SET_QUOTA | PROCESS_QUERY_LIMITED_INFORMATION,
+            0,
+            pid.as_u32(),
+        )
+    };
+    if handle.is_null() {
+        return Err(format!(
+            "Não foi possível abrir o processo {}.",
+            pid.as_u32()
+        ));
+    }
+    let status = unsafe {
+        if suspend {
+            NtSuspendProcess(handle)
+        } else {
+            NtResumeProcess(handle)
+        }
+    };
+    if suspend && status >= 0 {
+        unsafe {
+            EmptyWorkingSet(handle);
+        }
+    }
+    unsafe {
+        CloseHandle(handle);
+    }
+    if status < 0 {
+        return Err(format!(
+            "Falha ao {} o processo {} (NTSTATUS {status}).",
+            if suspend { "suspender" } else { "retomar" },
+            pid.as_u32()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn change_process_state(_pid: Pid, _suspend: bool) -> Result<(), String> {
+    Err("Suspensão de grupos disponível apenas no Windows nesta versão.".into())
+}
+
+#[tauri::command]
+pub fn group_suspend(
+    state: tauri::State<'_, TerminalState>,
+    group_id: String,
+    suspend: bool,
+) -> Result<(), String> {
+    if state
+        .suspended_groups
+        .lock()
+        .map_err(|e| e.to_string())?
+        .contains(&group_id)
+        == suspend
+    {
+        return Ok(());
+    }
+    let roots = running_roots(&state)?;
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let exists: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM groups WHERE id=?1)",
+            [&group_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !exists {
+        return Err("Grupo não encontrado.".into());
+    }
+    let system = System::new_all();
+    let mut targets = Vec::new();
+    let mut seen = HashSet::new();
+    for (folder, root) in roots {
+        if group_for_folder(&db, &folder)?.as_deref() != Some(&group_id) {
+            continue;
+        }
+        for pid in process_tree(&system, root) {
+            if seen.insert(pid) {
+                targets.push(pid);
+            }
+        }
+    }
+    drop(db);
+    if suspend {
+        targets.reverse();
+    }
+    let mut changed = Vec::new();
+    for pid in targets {
+        if let Err(error) = change_process_state(pid, suspend) {
+            if suspend {
+                for previous in changed.into_iter().rev() {
+                    let _ = change_process_state(previous, false);
+                }
+            }
+            return Err(error);
+        }
+        changed.push(pid);
+    }
+    let mut groups = state.suspended_groups.lock().map_err(|e| e.to_string())?;
+    if suspend {
+        groups.insert(group_id);
+    } else {
+        groups.remove(&group_id);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -485,5 +783,25 @@ mod tests {
             String::from_utf8_lossy(&output)
         );
         assert!(child.wait().unwrap().success());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn can_suspend_and_resume_owned_process() {
+        let mut child = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-Command", "Start-Sleep -Seconds 10"])
+            .spawn()
+            .unwrap();
+        let pid = Pid::from_u32(child.id());
+        let suspended = change_process_state(pid, true);
+        let resumed = if suspended.is_ok() {
+            change_process_state(pid, false)
+        } else {
+            Ok(())
+        };
+        let _ = child.kill();
+        let _ = child.wait();
+        suspended.unwrap();
+        resumed.unwrap();
     }
 }

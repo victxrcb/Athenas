@@ -5,6 +5,9 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { WebglAddon } from '@xterm/addon-webgl';
+import { CanvasAddon } from '@xterm/addon-canvas';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import type { SessionInfo } from './store';
 
@@ -50,9 +53,16 @@ export function TerminalView({ session, onStatus }: { session: SessionInfo; onSt
     terminal.loadAddon(fit);
     terminal.loadAddon(searchAddon);
     terminal.loadAddon(new Unicode11Addon());
+    terminal.loadAddon(new WebLinksAddon());
     terminal.unicode.activeVersion = '11';
     search.current = searchAddon;
     terminal.open(host.current);
+    const loadCanvas = () => { try { terminal.loadAddon(new CanvasAddon()); } catch { /* The DOM renderer remains available. */ } };
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => { webgl.dispose(); loadCanvas(); });
+      terminal.loadAddon(webgl);
+    } catch { loadCanvas(); }
     fit.fit();
     const outputQueue: OutputEvent[] = [];
     let replaying = true;
