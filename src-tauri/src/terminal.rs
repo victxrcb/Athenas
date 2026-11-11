@@ -145,7 +145,25 @@ fn valid_folder(folder: &str) -> Result<PathBuf, String> {
     if !path.is_dir() {
         return Err("Escolha uma pasta, não um arquivo.".into());
     }
-    Ok(path)
+    // canonicalize returns a verbatim `\?\` path on Windows, which breaks some CLIs and looks odd in the UI.
+    let text = path.to_string_lossy();
+    Ok(match text.strip_prefix(r"\?\") {
+        Some(rest) if !rest.starts_with("UNC") => PathBuf::from(rest),
+        _ => path,
+    })
+}
+
+/// Claude only accepts `--resume <id>` when a transcript for that id exists.
+fn claude_transcript_exists(id: &str) -> bool {
+    let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) else {
+        return false;
+    };
+    let Ok(projects) = fs::read_dir(PathBuf::from(home).join(".claude").join("projects")) else {
+        return false;
+    };
+    projects
+        .flatten()
+        .any(|entry| entry.path().join(format!("{id}.jsonl")).is_file())
 }
 
 fn valid_command(command: &str, agent: &str) -> Result<String, String> {
@@ -297,7 +315,7 @@ pub fn terminal_start(
         if uuid::Uuid::parse_str(&value).is_err() {
             return Err("ID de sessão Claude inválido.".into());
         }
-        if resume {
+        if resume && claude_transcript_exists(&value) {
             builder.arg("--resume");
             builder.arg(&value);
         } else {

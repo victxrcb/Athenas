@@ -10,8 +10,10 @@ import './orchestrator.css';
 import './permissions.css';
 import './settings.css';
 import './panel-actions.css';
+import './themes.css';
 import { App } from './App';
+import { ErrorBoundary } from './ErrorBoundary';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode><App /></React.StrictMode>,
+  <React.StrictMode><ErrorBoundary><App /></ErrorBoundary></React.StrictMode>,
 );

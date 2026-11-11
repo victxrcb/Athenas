@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { X } from 'lucide-react';
 import { useAppStore, type Preferences } from './store';
+import { THEMES, applyTheme, loadTheme, type ThemeId } from './themes';
 
 export function SettingsView() {
   const { settingsOpen, setSettingsOpen, preferences, setPreferences, setNotice } = useAppStore();
   const [draft, setDraft] = useState<Preferences>(preferences);
   const [saving, setSaving] = useState(false);
+  const [theme, setTheme] = useState<ThemeId>(loadTheme);
   useEffect(() => { if (settingsOpen) setDraft(preferences); }, [settingsOpen, preferences]);
   if (!settingsOpen) return null;
   const field = (key: 'claudeCommand' | 'codexCommand' | 'shellCommand', label: string) =>
@@ -25,6 +27,7 @@ export function SettingsView() {
       <div className="modal-top"><span className="section-kicker">PREFERÊNCIAS</span><button type="button" aria-label="Fechar configurações" onClick={() => setSettingsOpen(false)}><X size={18} /></button></div>
       <h2>Configurações</h2><p className="modal-intro">Comandos usados para novas sessões e limites locais do aplicativo.</p>
       <div className="settings-grid">{field('claudeCommand', 'Comando Claude Code')}{field('codexCommand', 'Comando Codex')}{field('shellCommand', 'Shell padrão')}{number('workerLimit', 'Workers paralelos', 1, 8)}{number('scrollbackMb', 'Scrollback por terminal (MB)', 1, 50)}{number('fontSize', 'Fonte do terminal (px)', 11, 24)}
+        <div className="theme-picker"><span>Tema de cores</span><div className="theme-options">{THEMES.map((item) => <button type="button" key={item.id} className="theme-option" aria-pressed={theme === item.id} onClick={() => { setTheme(item.id); applyTheme(item.id); }}><span className="theme-swatch">{item.swatch.map((color) => <i key={color} style={{ background: color }} />)}</span>{item.name}</button>)}</div></div>
         <label className="settings-check"><input type="checkbox" checked={draft.reducedEffects} onChange={(event) => setDraft((current) => ({ ...current, reducedEffects: event.target.checked }))} /> Reduzir efeitos visuais</label></div>
       <div className="modal-footer"><span /><div><button type="button" className="button-quiet" onClick={() => setSettingsOpen(false)}>Cancelar</button><button className="button-primary" disabled={saving}>Salvar</button></div></div>
     </form>
