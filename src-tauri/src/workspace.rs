@@ -320,6 +320,68 @@ pub fn pane_delete(state: tauri::State<'_, WorkspaceDb>, id: String) -> Result<W
 }
 
 #[tauri::command]
+pub fn project_update(
+    state: tauri::State<'_, WorkspaceDb>,
+    id: String,
+    name: String,
+    folder: String,
+    group_id: Option<String>,
+) -> Result<WorkspaceSnapshot, String> {
+    let name = clean_name(name)?;
+    let path = fs::canonicalize(folder.trim())
+        .map_err(|_| "A pasta não existe ou não está acessível.".to_string())?;
+    if !path.is_dir() {
+        return Err("Escolha uma pasta válida.".into());
+    }
+    let text = path.to_string_lossy();
+    let folder = text.strip_prefix(r"\\?\").filter(|rest| !rest.starts_with("UNC")).unwrap_or(&text).to_string();
+    let connection = state.0.lock().map_err(|e| e.to_string())?;
+    let changed = connection
+        .execute(
+            "UPDATE projects SET name=?2, folder=?3, group_id=?4, updated_at=unixepoch() WHERE id=?1",
+            params![id, name, folder, group_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("Projeto não encontrado.".into());
+    }
+    drop(connection);
+    state.snapshot()
+}
+
+/// Removes only the project and its panes; terminals and files on disk are left untouched.
+#[tauri::command]
+pub fn project_delete(
+    state: tauri::State<'_, WorkspaceDb>,
+    id: String,
+) -> Result<WorkspaceSnapshot, String> {
+    let connection = state.0.lock().map_err(|e| e.to_string())?;
+    connection
+        .execute("UPDATE sessions SET pane_id=NULL WHERE pane_id IN (SELECT id FROM panes WHERE project_id=?1)", [&id])
+        .map_err(|e| e.to_string())?;
+    connection.execute("DELETE FROM panes WHERE project_id=?1", [&id]).map_err(|e| e.to_string())?;
+    let changed = connection.execute("DELETE FROM projects WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("Projeto não encontrado.".into());
+    }
+    drop(connection);
+    state.snapshot()
+}
+
+#[tauri::command]
+pub fn project_reveal(folder: String) -> Result<(), String> {
+    let folder = fs::canonicalize(folder).map_err(|_| "Pasta do projeto não encontrada.")?;
+    if !folder.is_dir() {
+        return Err("Pasta do projeto inválida.".into());
+    }
+    let text = folder.to_string_lossy();
+    let clean = text.strip_prefix(r"\\?\").unwrap_or(&text).to_string();
+    let program = if cfg!(windows) { "explorer.exe" } else if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    std::process::Command::new(program).arg(clean).spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn project_open_vscode(folder: String) -> Result<(), String> {
     let folder = fs::canonicalize(folder).map_err(|_| "Pasta do projeto não encontrada.")?;
     if !folder.is_dir() { return Err("Pasta do projeto inválida.".into()); }

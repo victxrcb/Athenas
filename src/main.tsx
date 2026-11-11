@@ -11,6 +11,7 @@ import './permissions.css';
 import './settings.css';
 import './panel-actions.css';
 import './themes.css';
+import './ui.css';
 import { App } from './App';
 import { ErrorBoundary } from './ErrorBoundary';
 

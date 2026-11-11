@@ -28,7 +28,7 @@ export function SettingsView() {
       <h2>Configurações</h2><p className="modal-intro">Comandos usados para novas sessões e limites locais do aplicativo.</p>
       <div className="settings-grid">{field('claudeCommand', 'Comando Claude Code')}{field('codexCommand', 'Comando Codex')}{field('shellCommand', 'Shell padrão')}{number('workerLimit', 'Workers paralelos', 1, 8)}{number('scrollbackMb', 'Scrollback por terminal (MB)', 1, 50)}{number('fontSize', 'Fonte do terminal (px)', 11, 24)}
         <div className="theme-picker"><span>Tema de cores</span><div className="theme-options">{THEMES.map((item) => <button type="button" key={item.id} className="theme-option" aria-pressed={theme === item.id} onClick={() => { setTheme(item.id); applyTheme(item.id); }}><span className="theme-swatch">{item.swatch.map((color) => <i key={color} style={{ background: color }} />)}</span>{item.name}</button>)}</div></div>
-        <label className="settings-check"><input type="checkbox" checked={draft.reducedEffects} onChange={(event) => setDraft((current) => ({ ...current, reducedEffects: event.target.checked }))} /> Reduzir efeitos visuais</label></div>
+        <label className="settings-check"><input type="checkbox" checked={draft.reducedEffects} onChange={(event) => setDraft((current) => ({ ...current, reducedEffects: event.target.checked }))} /> Fundo ASCII na tela inicial</label></div>
       <div className="modal-footer"><span /><div><button type="button" className="button-quiet" onClick={() => setSettingsOpen(false)}>Cancelar</button><button className="button-primary" disabled={saving}>Salvar</button></div></div>
     </form>
   </div>;

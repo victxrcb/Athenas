@@ -1,0 +1,43 @@
+import { useState } from 'react';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
+import { X } from 'lucide-react';
+import { Select } from './Select';
+import { displayPath } from './path';
+import { useAppStore, type ProjectInfo, type WorkspaceSnapshot } from './store';
+
+export function ProjectEditor({ project, onClose }: { project: ProjectInfo; onClose: () => void }) {
+  const { workspace, setWorkspace, setNotice } = useAppStore();
+  const [name, setName] = useState(project.name);
+  const [folder, setFolder] = useState(displayPath(project.folder ?? ''));
+  const [groupId, setGroupId] = useState(project.groupId ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const choose = async () => {
+    if (!isTauri()) { setNotice('O seletor de pasta funciona no app desktop.'); return; }
+    const result = await open({ directory: true, multiple: false, defaultPath: folder || undefined });
+    if (typeof result === 'string') setFolder(result);
+  };
+
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={(event) => { if (event.key === 'Escape') onClose(); }}>
+    <form className="modal small-modal" role="dialog" aria-modal="true" aria-label="Editar projeto" onSubmit={async (event) => {
+      event.preventDefault();
+      setSaving(true);
+      try {
+        setWorkspace(await invoke<WorkspaceSnapshot>('project_update', { id: project.id, name, folder, groupId: groupId || null }));
+        onClose();
+        setNotice('Projeto atualizado.');
+      } catch (error) { setNotice(String(error)); }
+      finally { setSaving(false); }
+    }}>
+      <div className="modal-top"><span className="section-kicker">EDITAR PROJETO</span><button type="button" aria-label="Fechar" onClick={onClose}><X size={18} /></button></div>
+      <h2>Editar projeto</h2>
+      <label className="form-field"><span>Nome</span><input autoFocus value={name} maxLength={80} onChange={(event) => setName(event.target.value)} required /></label>
+      <div className="form-field"><span>Grupo</span>
+        <Select label="Grupo" value={groupId} onChange={setGroupId} options={[{ value: '', label: 'Sem grupo' }, ...workspace.groups.map((group) => ({ value: group.id, label: group.name }))]} />
+      </div>
+      <label className="form-field"><span>Pasta</span><div className="folder-row"><input value={folder} onChange={(event) => setFolder(event.target.value)} required /><button type="button" onClick={() => void choose()}>Escolher pasta</button></div></label>
+      <div className="modal-footer"><span /><div><button type="button" className="button-quiet" onClick={onClose}>Cancelar</button><button className="button-primary" disabled={saving}>Salvar</button></div></div>
+    </form>
+  </div>;
+}

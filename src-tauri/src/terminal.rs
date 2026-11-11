@@ -147,7 +147,7 @@ fn valid_folder(folder: &str) -> Result<PathBuf, String> {
     }
     // canonicalize returns a verbatim `\?\` path on Windows, which breaks some CLIs and looks odd in the UI.
     let text = path.to_string_lossy();
-    Ok(match text.strip_prefix(r"\?\") {
+    Ok(match text.strip_prefix(r"\\?\") {
         Some(rest) if !rest.starts_with("UNC") => PathBuf::from(rest),
         _ => path,
     })
