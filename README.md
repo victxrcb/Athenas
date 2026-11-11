@@ -1,6 +1,6 @@
-# Hera Agent
+# Athenas Agent
 
-App desktop local para organizar agentes de código. A Home e os assets da F0 estão prontos. A F1 inclui o fluxo de PTY e terminal, mas a validação nativa ainda está pendente; veja [docs/F1.md](docs/F1.md).
+App desktop local para organizar agentes de código. A Home e o núcleo de PTY estão implementados. A organização em grupos e projetos está em desenvolvimento; veja [docs/F1.md](docs/F1.md) e [docs/F2.md](docs/F2.md).
 
 ## Rodar
 
