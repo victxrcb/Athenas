@@ -22,6 +22,7 @@ pub struct Project {
     pub folder: Option<String>,
     pub layout: String,
     pub split_ratio: f64,
+    pub icon: Option<String>,
     pub updated_at: i64,
 }
 
@@ -53,7 +54,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 name TEXT NOT NULL, folder TEXT, layout TEXT NOT NULL DEFAULT 'auto', updated_at INTEGER NOT NULL);
             PRAGMA user_version = 1;
             COMMIT;").map_err(|e| e.to_string())?;
-    } else if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 {
+    } else if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 {
         return Err(format!("Versão de banco não suportada: {version}"));
     }
     if version < 2 {
@@ -91,6 +92,12 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             PRAGMA user_version = 5;
             COMMIT;").map_err(|e| e.to_string())?;
     }
+    if version < 6 {
+        connection.execute_batch("BEGIN;
+            ALTER TABLE projects ADD COLUMN icon TEXT;
+            PRAGMA user_version = 6;
+            COMMIT;").map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -125,7 +132,7 @@ impl WorkspaceDb {
             .map_err(|e| e.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
-        let mut projects_query = connection.prepare("SELECT id, group_id, name, folder, layout, split_ratio, updated_at FROM projects ORDER BY updated_at DESC, rowid DESC").map_err(|e| e.to_string())?;
+        let mut projects_query = connection.prepare("SELECT id, group_id, name, folder, layout, split_ratio, icon, updated_at FROM projects ORDER BY updated_at DESC, rowid DESC").map_err(|e| e.to_string())?;
         let projects = projects_query
             .query_map([], |row| {
                 Ok(Project {
@@ -135,7 +142,8 @@ impl WorkspaceDb {
                     folder: row.get(3)?,
                     layout: row.get(4)?,
                     split_ratio: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    icon: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -368,6 +376,41 @@ pub fn project_delete(
     state.snapshot()
 }
 
+const MAX_ICON_BYTES: usize = 300 * 1024;
+const ICON_PREFIXES: [&str; 3] = ["data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,"];
+
+fn valid_icon(icon: &str) -> bool {
+    icon.len() <= MAX_ICON_BYTES
+        && ICON_PREFIXES.iter().any(|prefix| {
+            icon.strip_prefix(prefix).is_some_and(|data| {
+                !data.is_empty() && data.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
+            })
+        })
+}
+
+/// Stores a small image (already resized by the UI) as the project's icon; `None` restores the default folder icon.
+#[tauri::command]
+pub fn project_set_icon(
+    state: tauri::State<'_, WorkspaceDb>,
+    id: String,
+    icon: Option<String>,
+) -> Result<WorkspaceSnapshot, String> {
+    if let Some(value) = &icon {
+        if !valid_icon(value) {
+            return Err("Imagem inválida ou grande demais (máximo 300 KB).".into());
+        }
+    }
+    let connection = state.0.lock().map_err(|e| e.to_string())?;
+    let changed = connection
+        .execute("UPDATE projects SET icon=?2 WHERE id=?1", params![id, icon])
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("Projeto não encontrado.".into());
+    }
+    drop(connection);
+    state.snapshot()
+}
+
 #[tauri::command]
 pub fn project_reveal(folder: String) -> Result<(), String> {
     let folder = fs::canonicalize(folder).map_err(|_| "Pasta do projeto não encontrada.")?;
@@ -404,6 +447,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn icon_validation_accepts_small_images_and_rejects_everything_else() {
+        assert!(valid_icon("data:image/png;base64,iVBORw0KGgo="));
+        assert!(!valid_icon("data:image/svg+xml;base64,PHN2Zz4="));
+        assert!(!valid_icon("data:image/png;base64,<script>"));
+        assert!(!valid_icon("https://example.com/a.png"));
+        assert!(!valid_icon(&format!("data:image/png;base64,{}", "A".repeat(MAX_ICON_BYTES))));
+    }
+
+    #[test]
     fn migration_creates_persistent_workspace_schema_once() {
         let connection = Connection::open_in_memory().unwrap();
         migrate(&connection).unwrap();
@@ -411,7 +463,7 @@ mod tests {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         connection
             .execute("INSERT INTO groups (id, name) VALUES ('g1', 'Equipe')", [])
             .unwrap();

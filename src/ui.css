@@ -49,3 +49,80 @@ input:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px soli
 .modal input:focus-visible,.modal textarea:focus-visible{outline:0;border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
 ::selection{background:var(--selection)}
 button{cursor:pointer}button:disabled{cursor:default}
+
+.ui-select-value{display:inline-flex;align-items:center;gap:9px;min-width:0}
+.agent-icon{flex:none}
+.agent-icon.claude{color:#d97757}
+.agent-icon.codex{color:#7aa2f7}
+.agent-icon.shell{color:var(--fg-dim)}
+
+/* ---------- Motion ---------- */
+:root{--ease:cubic-bezier(.22,.61,.36,1);--dur:.16s}
+body,.sidebar,.window-bar,.tab-bar,.modal,.command-box,.toast{transition:background-color .25s var(--ease),border-color .25s var(--ease),color .25s var(--ease)}
+button,.session-row>button,.project-link,.theme-option,.layout-options button,.ui-select-trigger,input,textarea{transition:background-color var(--dur) var(--ease),border-color var(--dur) var(--ease),color var(--dur) var(--ease),box-shadow var(--dur) var(--ease),transform var(--dur) var(--ease),opacity var(--dur) var(--ease)}
+button:active:not(:disabled){transform:scale(.97)}
+.button-primary:hover:not(:disabled),.new-agent:hover,.send-button:hover{transform:translateY(-1px)}
+.quick-actions button:hover,.start-list button:hover,.project-link:hover{transform:translateX(2px)}
+
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+@keyframes rise-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes pop-in{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes slide-in-right{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+@keyframes drop-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@keyframes pulse-dot{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--success) 55%,transparent)}50%{box-shadow:0 0 0 4px transparent}}
+@keyframes hero-in{from{opacity:0;transform:scale(1.03)}to{opacity:var(--hero-opacity,.4);transform:none}}
+
+.modal-backdrop{animation:fade-in .16s var(--ease)}
+.modal{animation:pop-in .2s var(--ease)}
+.toast{animation:slide-in-right .22s var(--ease)}
+.palette-backdrop{animation:fade-in .14s var(--ease)}
+.layout-popover,.ui-select-list{animation:drop-in .12s var(--ease);transform-origin:top}
+.ui-select-list.upward,.layout-popover{transform-origin:bottom}
+
+.home .home-eyebrow,.home .welcome,.home .command-box,.home .quick-actions,.home .home-sections>section,.home-footer{animation:rise-in .5s var(--ease) both}
+.home .command-box{animation-delay:.08s}
+.home .quick-actions{animation-delay:.14s}
+.home .home-sections>section:nth-child(1){animation-delay:.2s}
+.home .home-sections>section:nth-child(2){animation-delay:.27s}
+.home-footer{animation-delay:.34s}
+.hero-art{--hero-opacity:.4;animation:hero-in 1s var(--ease) both}
+
+.session-row,.project-pane,.project-workspace>header,.pane-tabs button,.orchestration-card,.recent-empty{animation:rise-in .24s var(--ease) both}
+.project-main,.terminal-view,.tools-columns,.orchestration-board{animation:fade-in .2s var(--ease) both}
+.session-row i.rodando,.pane-tabs button span.rodando,.terminal-status.rodando{animation:pulse-dot 2s ease-in-out infinite}
+.theme-swatch i{transition:transform .15s var(--ease)}.theme-option:hover .theme-swatch i{transform:scaleY(1.12)}
+.ui-select-list li{transition:background-color .1s var(--ease),color .1s var(--ease)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;animation-delay:0s!important;transition-duration:.01ms!important}
+}
+
+/* Project row with "more" button */
+.project-row{position:relative}
+.project-row>.project-link{width:100%}
+.project-more{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;display:grid;place-items:center;border:0;border-radius:4px;background:transparent;color:var(--fg-dim);opacity:0}
+.project-row:hover .project-more,.project-more:focus-visible,.project-more[aria-expanded="true"]{opacity:1}
+.project-row:hover .project-link small{opacity:0}
+.project-more:hover{background:var(--bg-3);color:var(--fg)}
+.project-more:active:not(:disabled){transform:translateY(-50%) scale(.95)}
+
+/* Project icon */
+.project-icon-img{display:block;object-fit:cover;border-radius:3px;flex:none}
+.recent-avatar{overflow:hidden}
+.recent-avatar img{width:100%;height:100%;object-fit:cover}
+.icon-editor{display:flex;align-items:center;gap:14px}
+.icon-preview{width:64px;height:64px;flex:none;display:grid;place-items:center;border:1px solid var(--line-strong);border-radius:8px;background:var(--bg-2);color:var(--fg-dim);overflow:hidden}
+.icon-preview .project-icon-img{width:100%;height:100%;border-radius:0}
+.icon-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.icon-actions button{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--line-strong);border-radius:4px;background:var(--bg-2);color:var(--fg);font-size:11px}
+.icon-actions button:hover:not(:disabled){background:var(--bg-3)}
+.icon-actions button:disabled{opacity:.45}
+.icon-actions small{flex-basis:100%;font-size:10px;color:var(--fg-faint)}
+
+/* Usage bar */
+.usage-bar{display:flex;align-items:center;gap:14px;font:600 11px 'Cascadia Mono','JetBrains Mono',Consolas,monospace;color:var(--fg-dim)}
+.usage-agent{display:inline-flex;align-items:center;gap:6px}
+.usage-agent.low{color:var(--success)}
+.usage-agent.mid{color:var(--warning)}
+.usage-agent.high{color:var(--error)}
+.usage-ram{color:var(--fg-dim)}

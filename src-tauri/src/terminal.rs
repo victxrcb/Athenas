@@ -8,11 +8,12 @@ use std::{
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
+    process::{Command, Stdio},
     sync::{mpsc, Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
-use sysinfo::{Pid, System};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tauri::{AppHandle, Emitter, Manager};
 
 const MAX_SCROLLBACK: usize = 5 * 1024 * 1024;
@@ -39,7 +40,8 @@ struct OutputEvent {
 
 struct RunningSession {
     info: SessionInfo,
-    master: Box<dyn MasterPty + Send>,
+    /// Dropped on exit: closing the ConPTY is what lets the reader thread reach EOF on Windows.
+    master: Option<Box<dyn MasterPty + Send>>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn Child + Send + Sync>,
     pid: Option<u32>,
@@ -51,6 +53,8 @@ pub struct TerminalState {
     db: Mutex<Connection>,
     suspended_groups: Mutex<HashSet<String>>,
     deleted_sessions: Mutex<HashSet<String>>,
+    /// Kept between calls: CPU usage is a delta against the previous refresh.
+    system: Mutex<System>,
     data_dir: PathBuf,
 }
 
@@ -113,6 +117,7 @@ impl TerminalState {
             db: Mutex::new(db),
             suspended_groups: Mutex::new(HashSet::new()),
             deleted_sessions: Mutex::new(HashSet::new()),
+            system: Mutex::new(System::new()),
             data_dir,
         }
     }
@@ -137,6 +142,12 @@ impl TerminalState {
     fn log_path(&self, id: &str) -> PathBuf {
         self.data_dir.join("scrollback").join(format!("{id}.log"))
     }
+}
+
+/// Folders saved before the prefix was stripped still carry the verbatim `\\?\` marker; compare without it.
+pub fn same_folder(a: &str, b: &str) -> bool {
+    let clean = |value: &str| value.strip_prefix(r"\\?\").unwrap_or(value).to_lowercase();
+    clean(a) == clean(b)
 }
 
 fn valid_folder(folder: &str) -> Result<PathBuf, String> {
@@ -241,7 +252,7 @@ pub fn terminal_start(
                 |row| row.get(0),
             )
             .map_err(|_| "Painel não encontrado ou sem pasta.".to_string())?;
-        if !pane_folder.eq_ignore_ascii_case(&folder.to_string_lossy()) {
+        if !same_folder(&pane_folder, &folder.to_string_lossy()) {
             return Err("O painel pertence a outra pasta.".into());
         }
     }
@@ -358,11 +369,12 @@ pub fn terminal_start(
     state.update(info.clone())?;
     let running = Arc::new(Mutex::new(RunningSession {
         info: info.clone(),
-        master: pair.master,
+        master: Some(pair.master),
         writer,
         child,
         pid,
     }));
+    let running_for_watcher = running.clone();
     state
         .sessions
         .lock()
@@ -413,21 +425,22 @@ pub fn terminal_start(
                 },
             );
         }
-        if let Ok(mut session) = running.lock() {
-            let status = session
-                .child
-                .wait()
-                .map(|exit| if exit.success() { "concluído" } else { "erro" })
-                .unwrap_or("erro");
-            session.info.status = status.into();
-            let terminal_state = app_output.state::<TerminalState>();
-            if terminal_state.deleted_sessions.lock().is_ok_and(|deleted| !deleted.contains(&id)) {
-                let _ = terminal_state.update(session.info.clone());
-                let _ = app_output.emit("terminal-status", session.info.clone());
-            }
-        }
-        if let Ok(mut sessions) = app_output.state::<TerminalState>().sessions.lock() {
-            sessions.remove(&id);
+        finish_session(&app_output, &running, &id, None);
+    });
+    let watcher_app = app.clone();
+    let watcher_session = running_for_watcher;
+    let watcher_id = info.id.clone();
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(300));
+        let exited = match watcher_session.lock() {
+            Ok(mut session) => session.info.status != "rodando" || !matches!(session.child.try_wait(), Ok(None)),
+            Err(_) => true,
+        };
+        if exited {
+            // Let the reader drain the last output before the pseudo console is closed.
+            thread::sleep(Duration::from_millis(200));
+            finish_session(&watcher_app, &watcher_session, &watcher_id, None);
+            break;
         }
     });
     Ok(info)
@@ -473,6 +486,8 @@ pub fn terminal_resize(
     let session = session.lock().map_err(|e| e.to_string())?;
     session
         .master
+        .as_ref()
+        .ok_or("Sessão encerrada.")?
         .resize(PtySize {
             rows,
             cols,
@@ -494,8 +509,52 @@ pub fn terminal_scrollback(
     Ok(STANDARD.encode(bytes))
 }
 
+/// Kills the whole process tree: CLIs such as Codex run through wrapper processes that `kill()` alone leaves alive.
+fn kill_tree(pid: Option<u32>, child: &mut (dyn Child + Send + Sync)) {
+    #[cfg(windows)]
+    if let Some(pid) = pid {
+        use std::os::windows::process::CommandExt;
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .creation_flags(0x0800_0000)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(not(windows))]
+    let _ = pid;
+    let _ = child.kill();
+}
+
+/// Marks a session as finished once (exit seen by the reader or by the watcher) and releases its PTY.
+fn finish_session(app: &AppHandle, running: &Arc<Mutex<RunningSession>>, id: &str, forced: Option<&str>) {
+    let info = {
+        let Ok(mut session) = running.lock() else { return };
+        if session.info.status != "rodando" {
+            return;
+        }
+        let status = match forced {
+            Some(value) => value,
+            None => session
+                .child
+                .wait()
+                .map(|exit| if exit.success() { "concluído" } else { "erro" })
+                .unwrap_or("erro"),
+        };
+        session.info.status = status.into();
+        session.master = None;
+        session.info.clone()
+    };
+    let state = app.state::<TerminalState>();
+    if state.deleted_sessions.lock().is_ok_and(|deleted| !deleted.contains(id)) {
+        let _ = state.update(info.clone());
+        let _ = app.emit("terminal-status", info);
+    }
+    state.sessions.lock().map(|mut sessions| { sessions.remove(id); }).ok();
+}
+
 #[tauri::command]
-pub fn terminal_stop(state: tauri::State<'_, TerminalState>, id: String) -> Result<(), String> {
+pub fn terminal_stop(app: AppHandle, state: tauri::State<'_, TerminalState>, id: String) -> Result<(), String> {
     let session = state
         .sessions
         .lock()
@@ -503,8 +562,13 @@ pub fn terminal_stop(state: tauri::State<'_, TerminalState>, id: String) -> Resu
         .get(&id)
         .cloned()
         .ok_or("Sessão encerrada.")?;
-    let mut session = session.lock().map_err(|e| e.to_string())?;
-    session.child.kill().map_err(|e| e.to_string())
+    {
+        let mut guard = session.lock().map_err(|e| e.to_string())?;
+        let pid = guard.pid;
+        kill_tree(pid, guard.child.as_mut());
+    }
+    finish_session(&app, &session, &id, Some("concluído"));
+    Ok(())
 }
 
 #[tauri::command]
@@ -542,7 +606,7 @@ pub fn terminal_set_pane(
             |row| row.get(0),
         )
         .map_err(|_| "Painel não encontrado.".to_string())?;
-    if !pane_folder.eq_ignore_ascii_case(&info.folder) {
+    if !same_folder(&pane_folder, &info.folder) {
         return Err("O painel pertence a outra pasta.".into());
     }
     drop(db);
@@ -591,8 +655,21 @@ pub struct GroupMemory {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MemorySnapshot {
+    /// Terminals plus the app itself (including its WebView2 processes).
     total_bytes: u64,
+    app_bytes: u64,
     groups: Vec<GroupMemory>,
+    agents: Vec<AgentUsage>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentUsage {
+    agent: String,
+    sessions: usize,
+    bytes: u64,
+    /// Share of the whole machine's CPU used by this agent's process trees, 0-100.
+    cpu_percent: f32,
 }
 
 fn running_roots(state: &TerminalState) -> Result<Vec<(String, Pid)>, String> {
@@ -611,6 +688,20 @@ fn running_roots(state: &TerminalState) -> Result<Vec<(String, Pid)>, String> {
         }
     }
     Ok(roots)
+}
+
+fn running_agents(state: &TerminalState) -> Result<Vec<(String, Pid)>, String> {
+    let running: Vec<_> = state.sessions.lock().map_err(|e| e.to_string())?.values().cloned().collect();
+    let mut agents = Vec::new();
+    for item in running {
+        let session = item.lock().map_err(|e| e.to_string())?;
+        if session.info.status == "rodando" {
+            if let Some(pid) = session.pid {
+                agents.push((session.info.agent.clone(), Pid::from_u32(pid)));
+            }
+        }
+    }
+    Ok(agents)
 }
 
 fn group_for_folder(db: &Connection, folder: &str) -> Result<Option<String>, String> {
@@ -647,8 +738,14 @@ fn process_tree(system: &System, root: Pid) -> Vec<Pid> {
 
 #[tauri::command]
 pub fn group_metrics(state: tauri::State<'_, TerminalState>) -> Result<MemorySnapshot, String> {
-    let system = System::new_all();
     let roots = running_roots(&state)?;
+    let agent_roots = running_agents(&state)?;
+    let mut system = state.system.lock().map_err(|e| e.to_string())?;
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        ProcessRefreshKind::new().with_memory().with_cpu(),
+    );
+    let cores = std::thread::available_parallelism().map_or(1, |count| count.get()) as f32;
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let suspended = state.suspended_groups.lock().map_err(|e| e.to_string())?;
     let mut groups = HashMap::<String, u64>::new();
@@ -663,7 +760,7 @@ pub fn group_metrics(state: tauri::State<'_, TerminalState>) -> Result<MemorySna
     }
     drop(query);
     let mut seen = HashSet::new();
-    let mut total_bytes = 0;
+    let mut sessions_bytes = 0;
     for (folder, root) in roots {
         let group = group_for_folder(&db, &folder)?;
         for pid in process_tree(&system, root) {
@@ -671,14 +768,40 @@ pub fn group_metrics(state: tauri::State<'_, TerminalState>) -> Result<MemorySna
                 continue;
             }
             let bytes = system.process(pid).map_or(0, |process| process.memory());
-            total_bytes += bytes;
+            sessions_bytes += bytes;
             if let Some(id) = &group {
                 *groups.entry(id.clone()).or_default() += bytes;
             }
         }
     }
+    let mut per_agent = HashMap::<String, AgentUsage>::new();
+    let mut counted = HashSet::new();
+    for (agent, root) in agent_roots {
+        let usage = per_agent.entry(agent.clone()).or_insert(AgentUsage { agent, sessions: 0, bytes: 0, cpu_percent: 0.0 });
+        usage.sessions += 1;
+        for pid in process_tree(&system, root) {
+            if !counted.insert(pid) {
+                continue;
+            }
+            if let Some(process) = system.process(pid) {
+                usage.bytes += process.memory();
+                usage.cpu_percent += process.cpu_usage() / cores;
+            }
+        }
+    }
+    let mut agents: Vec<AgentUsage> = per_agent.into_values().collect();
+    for usage in &mut agents {
+        usage.cpu_percent = usage.cpu_percent.clamp(0.0, 100.0);
+    }
+    agents.sort_by(|a, b| a.agent.cmp(&b.agent));
+    let app_bytes = process_tree(&system, Pid::from_u32(std::process::id()))
+        .into_iter()
+        .filter(|pid| seen.insert(*pid))
+        .map(|pid| system.process(pid).map_or(0, |process| process.memory()))
+        .sum::<u64>();
     Ok(MemorySnapshot {
-        total_bytes,
+        total_bytes: sessions_bytes + app_bytes,
+        app_bytes,
         groups: groups
             .into_iter()
             .map(|(group_id, bytes)| GroupMemory {
@@ -687,6 +810,7 @@ pub fn group_metrics(state: tauri::State<'_, TerminalState>) -> Result<MemorySna
                 bytes,
             })
             .collect(),
+        agents,
     })
 }
 
@@ -885,5 +1009,21 @@ mod tests {
         let _ = child.wait();
         suspended.unwrap();
         resumed.unwrap();
+    }
+
+    #[test]
+    fn folders_match_with_or_without_verbatim_prefix() {
+        assert!(same_folder(r"\\?\C:\Dev\App", r"c:\dev\app"));
+        assert!(!same_folder(r"C:\dev\app", r"C:\dev\other"));
+    }
+
+    #[test]
+    fn memory_of_the_current_process_is_measured() {
+        let mut system = System::new();
+        system.refresh_processes_specifics(ProcessesToUpdate::All, ProcessRefreshKind::new().with_memory().with_cpu());
+        let me = Pid::from_u32(std::process::id());
+        let tree = process_tree(&system, me);
+        assert!(tree.contains(&me));
+        assert!(system.process(me).is_some_and(|process| process.memory() > 0));
     }
 }

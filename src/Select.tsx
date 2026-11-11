@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 
-export type SelectOption = { value: string; label: string };
+export type SelectOption = { value: string; label: string; icon?: ReactNode };
 
 type Props = {
   value: string;
@@ -60,13 +60,13 @@ export function Select({ value, options, onChange, label, placeholder, disabled,
           pick(active);
         }
       }}>
-      <span className={current ? undefined : 'ui-select-placeholder'}>{current?.label ?? placeholder ?? 'Selecione'}</span>
+      <span className={current ? 'ui-select-value' : 'ui-select-placeholder'}>{current?.icon}{current?.label ?? placeholder ?? 'Selecione'}</span>
       <ChevronDown size={14} />
     </button>
     {open && <ul className={`ui-select-list ${upward ? 'upward' : ''}`} id={listId} role="listbox" aria-label={label}>
       {items.map((item, index) => <li key={item.value} role="option" aria-selected={item.value === value} className={index === active ? 'active' : undefined}
         onMouseEnter={() => setActive(index)} onMouseDown={(event) => { event.preventDefault(); pick(index); }}>
-        <span>{item.label}</span>{item.value === value && <Check size={13} />}
+        <span className="ui-select-value">{item.icon}{item.label}</span>{item.value === value && <Check size={13} />}
       </li>)}
     </ul>}
   </div>;

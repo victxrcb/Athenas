@@ -46,6 +46,7 @@ pub fn run() {
             workspace::pane_delete,
             workspace::project_update,
             workspace::project_delete,
+            workspace::project_set_icon,
             workspace::project_reveal,
             workspace::project_open_vscode,
             git_tools::git_snapshot,
