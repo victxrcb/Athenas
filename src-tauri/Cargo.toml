@@ -1,0 +1,17 @@
+[package]
+name = "hera-agent"
+version = "0.1.0"
+description = "Local desktop workspace for coding agents"
+authors = ["Hera Agent"]
+edition = "2021"
+
+[lib]
+name = "hera_agent_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
