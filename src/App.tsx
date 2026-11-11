@@ -7,7 +7,7 @@ import { ArrowLeft, ArrowRight, ArrowUpRight, ChevronDown, ChevronRight, Clock3,
 import logo from './assets/brand/ui-logo.png';
 import ascii from './assets/brand/hera-ascii.svg';
 import source from './assets/brand/hera-source.jpg';
-import { Agent, Mode, useAppStore } from './store';
+import { Agent, Mode, useAppStore, type WorkspaceSnapshot } from './store';
 const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ default: module.TerminalView })));
 
 const agentOptions: Agent[] = ['Claude Code', 'Codex', 'Shell'];
@@ -23,7 +23,7 @@ function WindowBar() {
     if (isTauri()) void getCurrentWindow()[name]();
   };
   return <div className="window-bar" data-tauri-drag-region>
-    <div className="window-brand" data-tauri-drag-region><img src={logo} alt="" /> <span>Hera Agent</span></div>
+    <div className="window-brand" data-tauri-drag-region><img src={logo} alt="" /> <span>Athenas Agent</span></div>
     <div className="window-center" data-tauri-drag-region>ESPAÇO DE TRABALHO <span>·</span> LOCAL</div>
     <div className="window-controls">
       <button aria-label="Minimizar" onClick={() => action('minimize')}><Minus size={15} /></button>
@@ -34,21 +34,25 @@ function WindowBar() {
 }
 
 function Sidebar() {
-  const { openSession, openProject, sessions, activeSessionId, setActiveSessionId, upsertSession, setNotice } = useAppStore();
+  const { openSession, openProject, sessions, activeSessionId, setActiveSessionId, upsertSession, setNotice, workspace, activeProjectId, setActiveProjectId, setWorkspace } = useAppStore();
+  const projectsFor = (groupId: string | null) => workspace.projects.filter((project) => project.groupId === groupId);
+  const projectButton = (project: import('./store').ProjectInfo) => <button key={project.id} className={`project-link ${activeProjectId === project.id ? 'selected' : ''}`} onClick={() => { setActiveSessionId(null); setActiveProjectId(project.id); }}><Folder size={14} /><span>{project.name}</span><small>{sessions.filter((session) => session.folder === project.folder).length}</small></button>;
   return <aside className="sidebar">
     <div className="sidebar-top">
       <button className="sidebar-icon active" aria-label="Início"><Home size={18} /></button>
       <button className="sidebar-icon" aria-label="Arquivos" onClick={openProject}><Folder size={18} /></button>
       <button className="sidebar-icon" aria-label="Git" onClick={() => useAppStore.getState().setNotice('Git ainda não está disponível nesta versão.')}><GitBranch size={18} /></button>
-      <button className="sidebar-icon" aria-label="Buscar" onClick={() => useAppStore.getState().setNotice('Busca ainda não está disponível nesta versão.')}><Search size={18} /></button>
+      <button className="sidebar-icon" aria-label="Buscar" onClick={() => useAppStore.getState().setPaletteOpen(true)}><Search size={18} /></button>
     </div>
     <div className="sidebar-content">
       <div className="section-kicker">SEU ESPAÇO</div>
       <button className="new-agent" onClick={openSession}><Plus size={16} /> Novo agente <kbd>Ctrl T</kbd></button>
       <div className="sidebar-heading"><span>PROJETOS</span><button aria-label="Novo projeto" onClick={openProject}><Plus size={15} /></button></div>
-      {sessions.length ? <div className="session-list">{sessions.map((session) => <div className="session-row" key={session.id}><button className={activeSessionId === session.id ? 'selected' : ''} onClick={() => setActiveSessionId(session.id)}><Terminal size={14} /><span>{session.agent}<small>{session.folder.split(/[\\/]/).pop()}</small></span><i className={session.status} title={session.status} /></button>{session.status !== 'rodando' && session.agent !== 'Shell' && <button className="resume-button" onClick={async () => { try { const resumed = await invoke<import('./store').SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, resume: true, cols: 100, rows: 30 }); upsertSession(resumed); setActiveSessionId(resumed.id); } catch (error) { setNotice(String(error)); } }}>Retomar</button>}</div>)}</div> : <div className="sidebar-empty"><span className="empty-mark">✧</span><p>Seu próximo projeto começa aqui.</p><small>Crie uma sessão para começar.</small></div>}
+      {workspace.groups.map((group) => <div className="project-group" key={group.id}><div className="project-group-title">{group.name}</div>{projectsFor(group.id).map(projectButton)}</div>)}
+      {projectsFor(null).map(projectButton)}
+      {sessions.length ? <div className="session-list">{sessions.map((session) => <div className="session-row" key={session.id}><button className={activeSessionId === session.id ? 'selected' : ''} onClick={() => { setActiveProjectId(null); setActiveSessionId(session.id); }}><Terminal size={14} /><span>{session.agent}<small>{session.folder.split(/[\\/]/).pop()}</small></span><i className={session.status} title={session.status} /></button>{session.status !== 'rodando' && session.agent !== 'Shell' && <button className="resume-button" onClick={async () => { try { const resumed = await invoke<import('./store').SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, resume: true, cols: 100, rows: 30 }); upsertSession(resumed); setActiveSessionId(resumed.id); } catch (error) { setNotice(String(error)); } }}>Retomar</button>}</div>)}</div> : workspace.projects.length === 0 && <div className="sidebar-empty"><span className="empty-mark">✧</span><p>Seu próximo projeto começa aqui.</p><small>Crie uma sessão para começar.</small></div>}
     </div>
-    <div className="sidebar-bottom"><button className="layout-select" onClick={() => useAppStore.getState().setNotice('Layouts ainda não estão disponíveis nesta versão.')}><PanelLeft size={15} /> Organização <ChevronDown size={14} /></button><div className="account"><img src={logo} alt="" /><span>conta local <b>· Default</b></span><Settings2 size={15} /></div></div>
+    <div className="sidebar-bottom"><label className="layout-select"><PanelLeft size={15} /><span>Organização</span><select aria-label="Organização" value={workspace.projects.find((project) => project.id === activeProjectId)?.layout ?? 'auto'} disabled={!activeProjectId} onChange={async (event) => { try { const next = await invoke<WorkspaceSnapshot>('project_set_layout', { id: activeProjectId, layout: event.target.value }); setWorkspace(next); } catch (error) { setNotice(String(error)); } }}><option value="auto">Auto</option><option value="spotlight">Spotlight</option><option value="sidebar">Sidebar</option><option value="grid">Grade</option></select><ChevronDown size={14} /></label><div className="account"><img src={logo} alt="" /><span>conta local <b>· Default</b></span><Settings2 size={15} /></div></div>
   </aside>;
 }
 
@@ -63,13 +67,16 @@ async function chooseFolder(): Promise<string | null> {
 }
 
 function SessionModal() {
-  const { sessionOpen, closeSession, setNotice, openSession } = useAppStore();
+  const { sessionOpen, closeSession, setNotice, openSession, activeProjectId, workspace } = useAppStore();
   const [agent, setAgent] = useState<Agent>('Claude Code');
   const [mode, setMode] = useState<Mode>('Normal');
   const [folder, setFolder] = useState('');
   const [advanced, setAdvanced] = useState(false);
   const [createMore, setCreateMore] = useState(false);
   const [command, setCommand] = useState('');
+  useEffect(() => {
+    if (sessionOpen) setFolder(workspace.projects.find((project) => project.id === activeProjectId)?.folder ?? '');
+  }, [sessionOpen, activeProjectId, workspace.projects]);
   if (!sessionOpen) return null;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -107,8 +114,46 @@ function SmallModal({ kind }: { kind: 'project' | 'group' }) {
   const openModal = kind === 'project' ? state.projectOpen : state.groupOpen;
   const close = kind === 'project' ? state.closeProject : state.closeGroup;
   const [name, setName] = useState('');
+  const [folder, setFolder] = useState('');
+  const [groupId, setGroupId] = useState('');
   if (!openModal) return null;
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><form className="modal small-modal" role="dialog" aria-modal="true" aria-label={kind === 'project' ? 'Novo projeto' : 'Novo grupo'} onSubmit={(event) => { event.preventDefault(); if (name.trim()) { state.setNotice(`${kind === 'project' ? 'Projetos' : 'Grupos'} ainda não estão disponíveis nesta versão.`); close(); setName(''); } }}><div className="modal-top"><span className="section-kicker">{kind === 'project' ? 'NOVO PROJETO' : 'NOVO GRUPO'}</span><button type="button" onClick={close} aria-label="Fechar modal"><X size={18} /></button></div><h2>Nomeie seu espaço.</h2><label className="form-field"><span>Nome</span><input value={name} onChange={(event) => setName(event.target.value)} autoFocus required /></label><div className="modal-footer"><span /><div><button type="button" className="button-quiet" onClick={close}>Cancelar</button><button className="button-primary">Criar</button></div></div></form></div>;
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!isTauri()) { state.setNotice('Crie espaços no aplicativo desktop.'); return; }
+    try {
+      const workspace = await invoke<WorkspaceSnapshot>(kind === 'project' ? 'project_create' : 'group_create', kind === 'project' ? { name, folder: folder || null, groupId: groupId || null } : { name });
+      state.setWorkspace(workspace);
+      if (kind === 'project') state.setActiveProjectId(workspace.projects[0]?.id ?? null);
+      close(); setName(''); setFolder(''); setGroupId('');
+    } catch (error) { state.setNotice(String(error)); }
+  };
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><form className="modal small-modal" role="dialog" aria-modal="true" aria-label={kind === 'project' ? 'Novo projeto' : 'Novo grupo'} onSubmit={submit}><div className="modal-top"><span className="section-kicker">{kind === 'project' ? 'NOVO PROJETO' : 'NOVO GRUPO'}</span><button type="button" onClick={close} aria-label="Fechar modal"><X size={18} /></button></div><h2>Nomeie seu espaço.</h2><label className="form-field"><span>Nome</span><input value={name} onChange={(event) => setName(event.target.value)} autoFocus required /></label>{kind === 'project' && <><label className="form-field"><span>Grupo</span><select value={groupId} onChange={(event) => setGroupId(event.target.value)}><option value="">Sem grupo</option>{state.workspace.groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select></label><label className="form-field"><span>Pasta</span><div className="folder-row"><input value={folder} onChange={(event) => setFolder(event.target.value)} placeholder="C:\\caminho\\do\\projeto" required /><button type="button" onClick={async () => { const selected = await chooseFolder(); if (selected) setFolder(selected); }}>Escolher pasta</button></div></label></>}<div className="modal-footer"><span /><div><button type="button" className="button-quiet" onClick={close}>Cancelar</button><button className="button-primary">Criar</button></div></div></form></div>;
+}
+
+function ProjectWorkspace({ project }: { project: import('./store').ProjectInfo }) {
+  const state = useAppStore();
+  const sessions = state.sessions.filter((session) => project.folder && session.folder.toLowerCase() === project.folder.toLowerCase());
+  const [spotlightId, setSpotlightId] = useState<string | null>(null);
+  const visible = project.layout === 'spotlight' || project.layout === 'sidebar' ? sessions.filter((session) => session.id === (spotlightId ?? sessions[0]?.id)) : sessions;
+  return <div className={`project-workspace layout-${project.layout}`}><header><div><span className="section-kicker">PROJETO</span><h1>{project.name}</h1><p>{project.folder || 'Escolha uma pasta ao criar uma sessão.'}</p></div><button className="button-primary" onClick={state.openSession}><Plus size={15} /> Novo agente</button></header>{sessions.length === 0 ? <div className="project-empty"><Terminal size={30} /><h2>Nenhuma sessão neste projeto.</h2><p>Abra um agente na pasta do projeto para começar.</p><button className="button-primary" onClick={state.openSession}>Nova sessão</button></div> : <div className="project-main">{(project.layout === 'spotlight' || project.layout === 'sidebar') && <div className="project-session-nav">{sessions.map((session) => <button key={session.id} className={(spotlightId ?? sessions[0]?.id) === session.id ? 'selected' : ''} onClick={() => setSpotlightId(session.id)}>{session.agent}<small>{session.status}</small></button>)}</div>}<div className="project-grid">{visible.map((session) => <div className="project-pane" key={session.id}>{session.status === 'rodando' ? <Suspense fallback={<div className="terminal-ended">Carregando terminal…</div>}><TerminalView session={session} onStatus={state.upsertSession} /></Suspense> : <div className="terminal-ended"><h2>{session.agent}</h2><p>Sessão {session.status}.</p></div>}</div>)}</div></div>}</div>;
+}
+
+function CommandPalette() {
+  const state = useAppStore();
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState(0);
+  if (!state.paletteOpen) return null;
+  const close = () => { state.setPaletteOpen(false); setQuery(''); setSelected(0); };
+  const actions = [
+    { label: 'Início', detail: 'Abrir tela inicial', run: () => { state.setActiveProjectId(null); state.setActiveSessionId(null); } },
+    { label: 'Nova sessão', detail: 'Abrir agente ou shell', run: state.openSession },
+    { label: 'Novo projeto', detail: 'Criar projeto', run: state.openProject },
+    { label: 'Novo grupo', detail: 'Criar grupo', run: state.openGroup },
+    ...state.workspace.projects.map((project) => ({ label: project.name, detail: `Projeto · ${project.folder ?? ''}`, run: () => { state.setActiveSessionId(null); state.setActiveProjectId(project.id); } })),
+    ...state.sessions.map((session) => ({ label: session.agent, detail: `Terminal · ${session.folder}`, run: () => { state.setActiveProjectId(null); state.setActiveSessionId(session.id); } })),
+  ].filter((item) => `${item.label} ${item.detail}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
+  const run = (index: number) => { actions[index]?.run(); close(); };
+  return <div className="palette-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><div className="palette" role="dialog" aria-modal="true" aria-label="Paleta de comandos"><div className="palette-search"><Search size={18} /><input autoFocus aria-label="Buscar comando" placeholder="Busque projetos, terminais ou ações…" value={query} onChange={(event) => { setQuery(event.target.value); setSelected(0); }} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setSelected(Math.min(selected + 1, actions.length - 1)); } if (event.key === 'ArrowUp') { event.preventDefault(); setSelected(Math.max(selected - 1, 0)); } if (event.key === 'Enter') { event.preventDefault(); run(selected); } }} /><kbd>ESC</kbd></div><div className="palette-results">{actions.length ? actions.map((item, index) => <button key={`${item.detail}-${index}`} className={selected === index ? 'selected' : ''} onMouseEnter={() => setSelected(index)} onClick={() => run(index)}><span>{item.label}<small>{item.detail}</small></span><ArrowUpRight size={14} /></button>) : <p>Nenhum resultado.</p>}</div></div></div>;
 }
 
 export function App() {
@@ -120,11 +165,13 @@ export function App() {
   const [date, setDate] = useState(new Date());
   const [reduced, setReduced] = useState(false);
   useEffect(() => { if (isTauri()) void invoke<import('./store').SessionInfo[]>('terminal_list').then(state.setSessions).catch((error) => state.setNotice(String(error))); }, [state.setSessions, state.setNotice]);
+  useEffect(() => { if (isTauri()) void invoke<WorkspaceSnapshot>('workspace_list').then(state.setWorkspace).catch((error) => state.setNotice(String(error))); }, [state.setWorkspace, state.setNotice]);
   useEffect(() => { const timer = setInterval(() => setDate(new Date()), 60000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { state.closeSession(); state.closeProject(); state.closeGroup(); state.setNotice(null); }
+      if (event.key === 'Escape') { state.closeSession(); state.closeProject(); state.closeGroup(); state.setPaletteOpen(false); state.setNotice(null); }
       if (!event.ctrlKey) return;
+      if (event.key.toLowerCase() === 'p' && !event.shiftKey) { event.preventDefault(); state.setPaletteOpen(true); }
       if (event.key.toLowerCase() === 't') { event.preventDefault(); state.openSession(); }
       if (event.shiftKey && event.key.toLowerCase() === 'p') { event.preventDefault(); state.openProject(); }
       if (event.shiftKey && event.key.toLowerCase() === 'g') { event.preventDefault(); state.openGroup(); }
@@ -134,17 +181,19 @@ export function App() {
   }, [state]);
   const formatted = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
   const activeSession = state.sessions.find((item) => item.id === state.activeSessionId);
+  const activeProject = state.workspace.projects.find((item) => item.id === state.activeProjectId);
   return <div className="app-shell">
     <WindowBar />
     <div className="workspace"><Sidebar /><main className="main-area"><div className="tab-bar"><div className="history-buttons"><button aria-label="Voltar" disabled><ArrowLeft size={16} /></button><button aria-label="Avançar" disabled><ArrowRight size={16} /></button></div><button className="app-tab" onClick={() => state.setActiveSessionId(null)}><Home size={15} /> Início <span className="tab-count">{state.sessions.filter((item) => item.status === 'rodando').length}</span></button>{activeSession && <div className="app-tab"><Terminal size={15} /> {activeSession.agent}<button aria-label="Ocultar terminal" onClick={() => state.setActiveSessionId(null)}><X size={13} /></button></div>}<button className="tab-plus" aria-label="Nova sessão" onClick={state.openSession}><Plus size={16} /></button><div className="tab-spacer" /><span className="local-badge"><span /> Local</span></div>
-      {activeSession && activeSession.status === 'rodando' ? <Suspense fallback={<div className="terminal-ended">Carregando terminal…</div>}><TerminalView session={activeSession} onStatus={state.upsertSession} /></Suspense> : activeSession ? <div className="terminal-ended"><h2>{activeSession.agent}</h2><p>Esta sessão terminou ({activeSession.status}).</p>{activeSession.agent !== 'Shell' && <button className="button-primary" onClick={async () => { try { const resumed = await invoke<import('./store').SessionInfo>('terminal_start', { agent: activeSession.agent, folder: activeSession.folder, command: activeSession.command, resumeId: activeSession.resumeId, resume: true, cols: 100, rows: 30 }); state.upsertSession(resumed); state.setActiveSessionId(resumed.id); } catch (error) { state.setNotice(String(error)); } }}>Retomar</button>}</div> : <div className="home"><div className="hero-art" aria-hidden="true" style={{ backgroundImage: `url(${reduced ? source : ascii})` }} />
-        <div className="home-content"><div className="home-eyebrow"><span className="eyebrow-line" /> O ESPAÇO ENTRE A IDEIA E O FEITO</div><div className="welcome"><img src={logo} alt="Logo Hera Agent" /><div><div className="wordmark">HERA <span>AGENT</span></div><span>SEU ATELIÊ DE AGENTES</span></div></div><h1>{greeting()}, Victor<span>.</span></h1><div className="date-line"><Clock3 size={15} /> {formatted} <span>·</span> {date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+      {activeSession && activeSession.status === 'rodando' ? <Suspense fallback={<div className="terminal-ended">Carregando terminal…</div>}><TerminalView session={activeSession} onStatus={state.upsertSession} /></Suspense> : activeSession ? <div className="terminal-ended"><h2>{activeSession.agent}</h2><p>Esta sessão terminou ({activeSession.status}).</p>{activeSession.agent !== 'Shell' && <button className="button-primary" onClick={async () => { try { const resumed = await invoke<import('./store').SessionInfo>('terminal_start', { agent: activeSession.agent, folder: activeSession.folder, command: activeSession.command, resumeId: activeSession.resumeId, resume: true, cols: 100, rows: 30 }); state.upsertSession(resumed); state.setActiveSessionId(resumed.id); } catch (error) { state.setNotice(String(error)); } }}>Retomar</button>}</div> : activeProject ? <ProjectWorkspace project={activeProject} /> : <div className="home"><div className="hero-art" aria-hidden="true" style={{ backgroundImage: `url(${reduced ? source : ascii})` }} />
+        <div className="home-content"><div className="home-eyebrow"><span className="eyebrow-line" /> O ESPAÇO ENTRE A IDEIA E O FEITO</div><div className="welcome"><img src={logo} alt="Logo Athenas Agent" /><div><div className="wordmark">ATHENAS <span>AGENT</span></div><span>SEU ATELIÊ DE AGENTES</span></div></div><h1>{greeting()}, Victor<span>.</span></h1><div className="date-line"><Clock3 size={15} /> {formatted} <span>·</span> {date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
           <div className="command-box"><div className="command-top"><Command size={16} /><span>NOVO COMANDO</span><span className="command-status">PRONTO PARA COMEÇAR</span></div><textarea aria-label="O que você quer construir?" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="O que você quer construir?" rows={3} /><div className="command-bottom"><SelectField label="Agente" value={agent} options={agentOptions} onChange={setAgent} /><button className="folder-select" onClick={async () => { const result = await chooseFolder(); if (result) setFolder(result); else if (!isTauri()) state.setNotice('Escolha a pasta no aplicativo desktop.'); }}><Folder size={15} /> {folder ? folder.split(/[\\/]/).pop() : 'Pasta'} <ChevronDown size={13} /></button><SelectField label="Modo" value={mode} options={modeOptions} onChange={setMode} /><div className="command-grow" /><button className="send-button" aria-label="Enviar comando" onClick={() => { if (!prompt.trim()) { state.openSession(); return; } state.setNotice('O envio ao agente ainda não está disponível nesta versão. Seu texto permanece nesta caixa.'); }}><Send size={17} /></button></div></div>
           <div className="quick-actions"><button onClick={state.openSession}><Terminal size={16} /> Novo terminal <ArrowUpRight size={14} /></button><button onClick={state.openProject}><Folder size={16} /> Novo projeto <ArrowUpRight size={14} /></button></div>
-          <div className="home-sections"><section><div className="section-head"><h2>Projetos recentes</h2><span>SEU TRABALHO, À MÃO</span></div><div className="recent-empty"><div className="recent-avatar">H</div><div><strong>Um começo em branco.</strong><p>Seus projetos vão aparecer aqui assim que você criar o primeiro.</p></div><button onClick={state.openProject} aria-label="Criar primeiro projeto"><ArrowUpRight size={18} /></button></div></section><section><div className="section-head"><h2>Comece algo</h2><span>ATALHOS</span></div><div className="start-list"><button onClick={state.openSession}><Terminal size={18} /><span>Novo terminal</span><kbd>Ctrl T</kbd><ChevronRight size={15} /></button><button onClick={state.openProject}><Folder size={18} /><span>Novo projeto</span><kbd>Ctrl Shift P</kbd><ChevronRight size={15} /></button><button onClick={state.openGroup}><Code2 size={18} /><span>Novo grupo</span><kbd>Ctrl Shift G</kbd><ChevronRight size={15} /></button></div></section></div>
+          <div className="home-sections"><section><div className="section-head"><h2>Projetos recentes</h2><span>SEU TRABALHO, À MÃO</span></div>{state.workspace.projects.length ? state.workspace.projects.slice(0, 4).map((project) => <button className="recent-empty recent-project" key={project.id} onClick={() => state.setActiveProjectId(project.id)}><div className="recent-avatar">{project.name.charAt(0).toUpperCase()}</div><div><strong>{project.name}</strong><p>{state.sessions.filter((session) => session.folder === project.folder).length} terminais · {project.folder || 'Sem pasta'}</p></div><ArrowUpRight size={18} /></button>) : <div className="recent-empty"><div className="recent-avatar">A</div><div><strong>Um começo em branco.</strong><p>Seus projetos vão aparecer aqui assim que você criar o primeiro.</p></div><button onClick={state.openProject} aria-label="Criar primeiro projeto"><ArrowUpRight size={18} /></button></div>}</section><section><div className="section-head"><h2>Comece algo</h2><span>ATALHOS</span></div><div className="start-list"><button onClick={state.openSession}><Terminal size={18} /><span>Novo terminal</span><kbd>Ctrl T</kbd><ChevronRight size={15} /></button><button onClick={state.openProject}><Folder size={18} /><span>Novo projeto</span><kbd>Ctrl Shift P</kbd><ChevronRight size={15} /></button><button onClick={state.openGroup}><Code2 size={18} /><span>Novo grupo</span><kbd>Ctrl Shift G</kbd><ChevronRight size={15} /></button></div></section></div>
           <div className="home-footer"><span>✦</span> FEITO PARA IDEIAS QUE MERECEM ESPAÇO <button onClick={() => setReduced(!reduced)}>{reduced ? 'Usar arte ASCII' : 'Reduzir efeitos'}</button></div></div></div>}
     </main></div>
     <SessionModal /><SmallModal kind="project" /><SmallModal kind="group" />
+    <CommandPalette />
     {state.notice && <div className="toast" role="status"><FileText size={16} />{state.notice}<button aria-label="Fechar aviso" onClick={() => state.setNotice(null)}><X size={16} /></button></div>}
   </div>;
 }

@@ -21,4 +21,13 @@ describe('home', () => {
     fireEvent.click(dialog.getByRole('button', { name: /Abrir Claude Code/ }));
     expect(screen.getByRole('status').textContent).toContain('Escolha Normal');
   });
+
+  it('opens command search with Ctrl+P and filters actions', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'p', ctrlKey: true });
+    const palette = within(screen.getByRole('dialog', { name: 'Paleta de comandos' }));
+    fireEvent.change(palette.getByLabelText('Buscar comando'), { target: { value: 'Novo grupo' } });
+    expect(palette.getByRole('button', { name: /Novo grupo/ })).toBeTruthy();
+    expect(palette.queryByRole('button', { name: /Novo projeto/ })).toBeNull();
+  });
 });

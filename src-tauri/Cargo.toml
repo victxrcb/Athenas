@@ -1,12 +1,12 @@
 [package]
-name = "hera-agent"
+name = "athenas-agent"
 version = "0.1.0"
 description = "Local desktop workspace for coding agents"
-authors = ["Hera Agent"]
+authors = ["Athenas Agent"]
 edition = "2021"
 
 [lib]
-name = "hera_agent_lib"
+name = "athenas_agent_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -21,3 +21,4 @@ serde_json = "1"
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
 shell-words = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }

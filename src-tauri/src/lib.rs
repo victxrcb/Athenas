@@ -1,4 +1,5 @@
 mod terminal;
+mod workspace;
 
 use tauri::Manager;
 
@@ -7,6 +8,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            app.manage(workspace::WorkspaceDb::new(&app.handle()).map_err(std::io::Error::other)?);
             app.manage(terminal::TerminalState::new(&app.handle()));
             Ok(())
         })
@@ -17,8 +19,12 @@ pub fn run() {
             terminal::terminal_resize,
             terminal::terminal_scrollback,
             terminal::terminal_stop,
-            terminal::terminal_save_image
+            terminal::terminal_save_image,
+            workspace::workspace_list,
+            workspace::group_create,
+            workspace::project_create,
+            workspace::project_set_layout
         ])
         .run(tauri::generate_context!())
-        .expect("failed to start Hera Agent");
+        .expect("failed to start Athenas Agent");
 }

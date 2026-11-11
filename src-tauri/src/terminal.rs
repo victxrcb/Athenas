@@ -1,5 +1,6 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -43,6 +44,7 @@ struct RunningSession {
 pub struct TerminalState {
     sessions: Mutex<HashMap<String, Arc<Mutex<RunningSession>>>>,
     saved: Mutex<Vec<SessionInfo>>,
+    db: Mutex<Connection>,
     data_dir: PathBuf,
 }
 
@@ -53,11 +55,42 @@ impl TerminalState {
             .app_data_dir()
             .expect("app data directory unavailable");
         fs::create_dir_all(&data_dir).expect("cannot create app data directory");
+        let db =
+            Connection::open(data_dir.join("workspace.sqlite3")).expect("cannot open database");
+        db.pragma_update(None, "journal_mode", "WAL")
+            .expect("cannot enable WAL");
         let saved_path = data_dir.join("sessions.json");
-        let saved: Vec<SessionInfo> = fs::read(&saved_path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
+        let count: i64 = db
+            .query_row("SELECT count(*) FROM sessions", [], |row| row.get(0))
+            .expect("cannot count sessions");
+        if count == 0 {
+            let legacy: Vec<SessionInfo> = fs::read(&saved_path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                .unwrap_or_default();
+            for item in legacy {
+                db.execute("INSERT OR IGNORE INTO sessions (id, agent, folder, command, resume_id, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![item.id, item.agent, item.folder, item.command, item.resume_id, item.status]).expect("cannot migrate sessions");
+            }
+        }
+        let mut query = db
+            .prepare("SELECT id, agent, folder, command, resume_id, status FROM sessions")
+            .expect("cannot query sessions");
+        let saved: Vec<SessionInfo> = query
+            .query_map([], |row| {
+                Ok(SessionInfo {
+                    id: row.get(0)?,
+                    agent: row.get(1)?,
+                    folder: row.get(2)?,
+                    command: row.get(3)?,
+                    resume_id: row.get(4)?,
+                    status: row.get(5)?,
+                })
+            })
+            .expect("cannot read sessions")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("invalid session row");
+        drop(query);
         let saved = saved
             .into_iter()
             .map(|mut item| {
@@ -70,25 +103,24 @@ impl TerminalState {
         Self {
             sessions: Mutex::new(HashMap::new()),
             saved: Mutex::new(saved),
+            db: Mutex::new(db),
             data_dir,
         }
     }
 
-    fn persist(&self) -> Result<(), String> {
-        let bytes = serde_json::to_vec_pretty(&*self.saved.lock().map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
-        fs::write(self.data_dir.join("sessions.json"), bytes).map_err(|e| e.to_string())
-    }
-
     fn update(&self, info: SessionInfo) -> Result<(), String> {
+        self.db.lock().map_err(|e| e.to_string())?.execute(
+            "INSERT INTO sessions (id, agent, folder, command, resume_id, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET status=excluded.status, resume_id=excluded.resume_id",
+            params![info.id, info.agent, info.folder, info.command, info.resume_id, info.status],
+        ).map_err(|e| e.to_string())?;
         let mut saved = self.saved.lock().map_err(|e| e.to_string())?;
         if let Some(previous) = saved.iter_mut().find(|item| item.id == info.id) {
             *previous = info;
         } else {
             saved.push(info);
         }
-        drop(saved);
-        self.persist()
+        Ok(())
     }
 
     fn log_path(&self, id: &str) -> PathBuf {
@@ -315,11 +347,15 @@ pub fn terminal_write(
     id: String,
     data: String,
 ) -> Result<(), String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    let session = sessions.get(&id).ok_or("Sessão encerrada.")?;
-    session
+    let session = state
+        .sessions
         .lock()
         .map_err(|e| e.to_string())?
+        .get(&id)
+        .cloned()
+        .ok_or("Sessão encerrada.")?;
+    let mut session = session.lock().map_err(|e| e.to_string())?;
+    session
         .writer
         .write_all(data.as_bytes())
         .map_err(|e| e.to_string())
@@ -335,11 +371,15 @@ pub fn terminal_resize(
     if !(2..=500).contains(&cols) || !(2..=200).contains(&rows) {
         return Err("Tamanho inválido.".into());
     }
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    let session = sessions.get(&id).ok_or("Sessão encerrada.")?;
-    session
+    let session = state
+        .sessions
         .lock()
         .map_err(|e| e.to_string())?
+        .get(&id)
+        .cloned()
+        .ok_or("Sessão encerrada.")?;
+    let session = session.lock().map_err(|e| e.to_string())?;
+    session
         .master
         .resize(PtySize {
             rows,
@@ -364,14 +404,15 @@ pub fn terminal_scrollback(
 
 #[tauri::command]
 pub fn terminal_stop(state: tauri::State<'_, TerminalState>, id: String) -> Result<(), String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    let session = sessions.get(&id).ok_or("Sessão encerrada.")?;
-    session
+    let session = state
+        .sessions
         .lock()
         .map_err(|e| e.to_string())?
-        .child
-        .kill()
-        .map_err(|e| e.to_string())
+        .get(&id)
+        .cloned()
+        .ok_or("Sessão encerrada.")?;
+    let mut session = session.lock().map_err(|e| e.to_string())?;
+    session.child.kill().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -392,4 +433,57 @@ pub fn terminal_save_image(
     fs::create_dir_all(path.parent().ok_or("Pasta inválida.")?).map_err(|e| e.to_string())?;
     fs::write(&path, bytes).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scrollback_keeps_only_recent_bytes() {
+        let directory =
+            std::env::temp_dir().join(format!("athenas-scrollback-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("output.log");
+        let content = vec![b'A'; MAX_SCROLLBACK + 128 * 1024];
+        write_scrollback(&path, &content).unwrap();
+        let saved = fs::read(&path).unwrap();
+        assert_eq!(saved.len(), MAX_SCROLLBACK);
+        assert!(saved.iter().all(|byte| *byte == b'A'));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn conpty_runs_a_real_shell() {
+        let pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .unwrap();
+        let mut command = CommandBuilder::new("cmd.exe");
+        command.arg("/d");
+        command.arg("/c");
+        command.arg("echo ATHENAS_PTY_OK");
+        let mut child = pair.slave.spawn_command(command).unwrap();
+        drop(pair.slave);
+        let mut reader = pair.master.try_clone_reader().unwrap();
+        let mut output = Vec::new();
+        let mut chunk = [0u8; 4096];
+        while !String::from_utf8_lossy(&output).contains("ATHENAS_PTY_OK") {
+            let read = reader.read(&mut chunk).unwrap();
+            if read == 0 {
+                break;
+            }
+            output.extend_from_slice(&chunk[..read]);
+        }
+        assert!(
+            String::from_utf8_lossy(&output).contains("ATHENAS_PTY_OK"),
+            "{}",
+            String::from_utf8_lossy(&output)
+        );
+        assert!(child.wait().unwrap().success());
+    }
 }
