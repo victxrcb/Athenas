@@ -1,4 +1,5 @@
 import { confirmAction } from './confirm';
+import { deleteSession } from './panes';
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -40,7 +41,7 @@ export function PanelActions({ pane, project, active, tabs, onActivate }: {
     <button aria-label="Reiniciar terminal" title="Reiniciar terminal" disabled={!active} onClick={() => void run(restart)}><RotateCcw size={13} /></button>
     <button aria-label={active ? 'Excluir sessão' : 'Excluir painel'} title={active ? 'Excluir sessão' : 'Excluir painel'} onClick={() => {
       void run(async () => {
-        if (!(await confirmAction(active ? 'Encerrar e excluir esta sessão e seu scrollback?' : 'Excluir este painel vazio?'))) return; if (active) { await invoke('terminal_delete', { id: active.id }); state.setSessions(await invoke<SessionInfo[]>('terminal_list')); }
+        if (!(await confirmAction(active ? 'Encerrar e excluir esta sessão e seu scrollback?' : 'Excluir este painel vazio?'))) return; if (active) { await deleteSession(active.id); }
         else state.setWorkspace(await invoke<WorkspaceSnapshot>('pane_delete', { id: pane.id })); });
     }}><Trash2 size={13} /></button>
   </div>{historyOpen && <div className="panel-history"><strong>Sessões do painel</strong>{tabs.map((session) => <button key={session.id} onClick={() => { onActivate(session.id); setHistoryOpen(false); }}>{session.agent} · {session.status}</button>)}</div>}</div>;

@@ -27,3 +27,6 @@
 .project-workspace header h1{font-size:14px;font-weight:600;margin:0;white-space:nowrap}
 .project-workspace header p{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .project-workspace header button{padding:6px 11px;font-size:11px;flex:none}
+
+.account-settings{margin-left:auto;border:0;background:transparent;color:var(--fg-faint);padding:6px;border-radius:4px;display:grid;place-items:center}
+.account-settings:hover{color:var(--fg);background:var(--bg-2)}
