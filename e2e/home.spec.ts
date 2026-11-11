@@ -9,5 +9,5 @@ test('home and new session flow', async ({ page }) => {
   await page.screenshot({ path: 'docs/screenshots/nova-sessao.png', fullPage: true });
   await page.getByLabel('Pasta', { exact: true }).fill('C:\\dev\\demo');
   await page.getByRole('button', { name: 'Abrir Claude Code' }).click();
-  await expect(page.getByRole('status')).toContainText('ainda não está disponível nesta versão');
+  await expect(page.getByRole('status')).toContainText('Abra o aplicativo desktop');
 });
