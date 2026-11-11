@@ -8,6 +8,7 @@ export type ProjectInfo = { id: string; groupId: string | null; name: string; fo
 export type PaneInfo = { id: string; projectId: string; position: number };
 export type WorkspaceSnapshot = { groups: GroupInfo[]; projects: ProjectInfo[]; panes: PaneInfo[] };
 export type MemorySnapshot = { totalBytes: number; groups: { groupId: string; bytes: number; suspended: boolean }[] };
+export type Section = 'home' | 'git' | 'mcp' | 'skills';
 
 type AppState = {
   sessionOpen: boolean;
@@ -21,6 +22,8 @@ type AppState = {
   setMemory: (memory: MemorySnapshot) => void;
   activeProjectId: string | null;
   paletteOpen: boolean;
+  section: Section;
+  setSection: (section: Section) => void;
   targetPaneId: string | null;
   openSessionInPane: (paneId: string) => void;
   setPaletteOpen: (open: boolean) => void;
@@ -40,7 +43,8 @@ type AppState = {
 
 export const useAppStore = create<AppState>((set) => ({
   sessionOpen: false, projectOpen: false, groupOpen: false, notice: null, sessions: [], activeSessionId: null,
-  workspace: { groups: [], projects: [], panes: [] }, memory: { totalBytes: 0, groups: [] }, activeProjectId: null, paletteOpen: false, targetPaneId: null,
+  workspace: { groups: [], projects: [], panes: [] }, memory: { totalBytes: 0, groups: [] }, activeProjectId: null, paletteOpen: false, targetPaneId: null, section: 'home',
+  setSection: (section) => set({ section }),
   setMemory: (memory) => set({ memory }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setWorkspace: (workspace) => set({ workspace }),

@@ -1,3 +1,6 @@
+mod git_tools;
+mod mcp_config;
+mod skills;
 mod terminal;
 mod workspace;
 
@@ -28,7 +31,16 @@ pub fn run() {
             workspace::project_create,
             workspace::project_set_layout,
             workspace::project_set_split,
-            workspace::pane_create
+            workspace::pane_create,
+            git_tools::git_snapshot,
+            git_tools::git_file_diff,
+            git_tools::git_stage,
+            git_tools::git_commit,
+            git_tools::git_create_worktree,
+            skills::skills_list,
+            skills::skill_open_folder,
+            mcp_config::mcp_config_list,
+            mcp_config::mcp_config_write
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Athenas Agent");

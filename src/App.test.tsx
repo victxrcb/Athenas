@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { App } from './App';
+import { useAppStore } from './store';
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); useAppStore.setState({ paletteOpen: false, section: 'home', sessionOpen: false, projectOpen: false, groupOpen: false, notice: null }); });
 
 describe('home', () => {
   it('opens the session dialog from the quick action', () => {
@@ -29,5 +30,11 @@ describe('home', () => {
     fireEvent.change(palette.getByLabelText('Buscar comando'), { target: { value: 'Novo grupo' } });
     expect(palette.getByRole('button', { name: /Novo grupo/ })).toBeTruthy();
     expect(palette.queryByRole('button', { name: /Novo projeto/ })).toBeNull();
+  });
+
+  it('opens Git tools and asks for a project when none is selected', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Git' }));
+    expect(await screen.findByText('Escolha um projeto com pasta para usar Git.')).toBeTruthy();
   });
 });
