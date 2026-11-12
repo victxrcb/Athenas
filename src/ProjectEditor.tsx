@@ -37,7 +37,7 @@ export function ProjectEditor({ project, onClose }: { project: ProjectInfo; onCl
       } catch (error) { setNotice(String(error)); }
       finally { setSaving(false); }
     }}>
-      <div className="modal-top"><span className="section-kicker">EDITAR PROJETO</span><button type="button" aria-label="Fechar" onClick={onClose}><X size={18} /></button></div>
+      <div className="modal-top"><span className="section-kicker">Projeto</span><button type="button" className="icon-button" aria-label="Fechar" onClick={onClose}><X size={16} /></button></div>
       <h2>Editar projeto</h2>
       <div className="form-field"><span>Ícone</span>
         <div className="icon-editor">
@@ -59,7 +59,7 @@ export function ProjectEditor({ project, onClose }: { project: ProjectInfo; onCl
       <div className="form-field"><span>Grupo</span>
         <Select label="Grupo" value={groupId} onChange={setGroupId} options={[{ value: '', label: 'Sem grupo' }, ...workspace.groups.map((group) => ({ value: group.id, label: group.name }))]} />
       </div>
-      <label className="form-field"><span>Pasta</span><div className="folder-row"><input value={folder} onChange={(event) => setFolder(event.target.value)} required /><button type="button" onClick={() => void choose()}>Escolher pasta</button></div></label>
+      <label className="form-field"><span>Pasta</span><div className="folder-row"><input value={folder} onChange={(event) => setFolder(event.target.value)} required /><button type="button" className="button-quiet" onClick={() => void choose()}>Escolher pasta</button></div></label>
       <div className="modal-footer"><span /><div><button type="button" className="button-quiet" onClick={onClose}>Cancelar</button><button className="button-primary" disabled={saving}>Salvar</button></div></div>
     </form>
   </div>;

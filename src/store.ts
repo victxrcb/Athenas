@@ -11,6 +11,8 @@ export type AgentUsage = { agent: string; sessions: number; bytes: number; cpuPe
 export type MemorySnapshot = { totalBytes: number; appBytes: number; groups: { groupId: string; bytes: number; suspended: boolean }[]; agents: AgentUsage[] };
 export type Preferences = { claudeCommand: string; codexCommand: string; shellCommand: string; workerLimit: number; scrollbackMb: number; fontSize: number; reducedEffects: boolean };
 export type Section = 'home' | 'git' | 'mcp' | 'skills' | 'orchestrator';
+/** Live orchestrator counters shown in navigation; polled once by the app shell. */
+export type WorkerSummary = { active: number; waiting: number };
 
 type AppState = {
   sessionOpen: boolean;
@@ -26,6 +28,8 @@ type AppState = {
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
   setMemory: (memory: MemorySnapshot) => void;
+  workerSummary: WorkerSummary;
+  setWorkerSummary: (summary: WorkerSummary) => void;
   activeProjectId: string | null;
   paletteOpen: boolean;
   section: Section;
@@ -49,11 +53,12 @@ type AppState = {
 
 export const useAppStore = create<AppState>((set) => ({
   sessionOpen: false, projectOpen: false, groupOpen: false, notice: null, sessions: [], activeSessionId: null,
-  workspace: { groups: [], projects: [], panes: [] }, memory: { totalBytes: 0, appBytes: 0, groups: [], agents: [] }, preferences: { claudeCommand: 'claude', codexCommand: 'codex', shellCommand: 'powershell.exe', workerLimit: 3, scrollbackMb: 5, fontSize: 13, reducedEffects: false }, settingsOpen: false, activeProjectId: null, paletteOpen: false, targetPaneId: null, section: 'home',
+  workspace: { groups: [], projects: [], panes: [] }, memory: { totalBytes: 0, appBytes: 0, groups: [], agents: [] }, preferences: { claudeCommand: 'claude', codexCommand: 'codex', shellCommand: 'powershell.exe', workerLimit: 3, scrollbackMb: 5, fontSize: 13, reducedEffects: false }, settingsOpen: false, workerSummary: { active: 0, waiting: 0 }, activeProjectId: null, paletteOpen: false, targetPaneId: null, section: 'home',
   setPreferences: (preferences) => set({ preferences }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setSection: (section) => set({ section }),
   setMemory: (memory) => set({ memory }),
+  setWorkerSummary: (workerSummary) => set((state) => (state.workerSummary.active === workerSummary.active && state.workerSummary.waiting === workerSummary.waiting ? state : { workerSummary })),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setWorkspace: (workspace) => set({ workspace }),
   setActiveProjectId: (activeProjectId) => set({ activeProjectId }),

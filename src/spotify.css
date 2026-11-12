@@ -1,4 +1,4 @@
-.spotify-player{padding:13px 14px 12px;border-top:1px solid var(--line);background:var(--bg-1)}
+.spotify-player{padding:10px 12px}
 .spotify-track{display:flex;align-items:center;gap:10px;min-width:0}
 .spotify-art{width:35px;height:35px;flex:none;display:grid;place-items:center;border-radius:5px;background:color-mix(in srgb,#1db954 15%,var(--bg-2));color:#1db954}
 .spotify-info{min-width:0;display:grid;gap:2px}

@@ -13,6 +13,9 @@ import { confirmAction } from './confirm';
 import { displayPath } from './path';
 import { terminalPalette } from './themes';
 import { useAppStore, type SessionInfo } from './store';
+import { AgentIcon } from './AgentIcon';
+import { StatusBadge, sessionStatus } from './status';
+import { Power, Search } from 'lucide-react';
 
 type OutputEvent = { id: string; sequence: number; data: string };
 
@@ -105,8 +108,8 @@ export function TerminalView({ session, onStatus }: { session: SessionInfo; onSt
   }, [session.id, onStatus, fontSize]);
 
   return <div className="terminal-view">
-    <div className="terminal-toolbar"><span>{session.agent} · {displayPath(session.folder)}</span><div><span className={`terminal-status ${session.status}`}>{session.status}</span><button onClick={() => setSearchOpen(!searchOpen)}>Buscar <kbd>Ctrl F</kbd></button><button onClick={() => { void confirmAction('Encerrar este processo?').then((ok) => ok ? invoke('terminal_stop', { id: session.id }) : undefined).catch((reason) => setError(String(reason))); }}>Encerrar</button></div></div>
-    {searchOpen && <div className="terminal-search"><input autoFocus aria-label="Buscar no terminal" placeholder="Buscar no terminal" value={query} onChange={(event) => { setQuery(event.target.value); search.current?.findNext(event.target.value); }} onKeyDown={(event) => { if (event.key === 'Enter') search.current?.findNext(query); if (event.key === 'Escape') setSearchOpen(false); }} /><button onClick={() => setSearchOpen(false)}>Fechar</button></div>}
+    <div className="terminal-toolbar"><div className="terminal-title"><AgentIcon agent={session.agent} size={14} /><strong>{session.agent}</strong><span title={displayPath(session.folder)}>{displayPath(session.folder)}</span></div><div className="terminal-tools"><StatusBadge info={sessionStatus(session.status)} /><button className="button-ghost button-sm" aria-pressed={searchOpen} onClick={() => setSearchOpen(!searchOpen)}><Search size={13} /> Buscar <kbd>Ctrl F</kbd></button><button className="button-ghost button-sm danger" onClick={() => { void confirmAction('Encerrar este processo?').then((ok) => ok ? invoke('terminal_stop', { id: session.id }) : undefined).catch((reason) => setError(String(reason))); }}><Power size={13} /> Encerrar</button></div></div>
+    {searchOpen && <div className="terminal-search"><input autoFocus aria-label="Buscar no terminal" placeholder="Buscar no terminal" value={query} onChange={(event) => { setQuery(event.target.value); search.current?.findNext(event.target.value); }} onKeyDown={(event) => { if (event.key === 'Enter') search.current?.findNext(query); if (event.key === 'Escape') setSearchOpen(false); }} /><button className="button-ghost button-sm" onClick={() => setSearchOpen(false)}>Fechar</button></div>}
     <div ref={host} className="terminal-canvas" onPaste={(event) => { void pasteImage(event); }} />
     {error && <div className="terminal-error" role="alert">{error}</div>}
   </div>;

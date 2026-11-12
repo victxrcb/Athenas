@@ -12,7 +12,7 @@ export function ConfirmHost() {
   const answer = (ok: boolean) => { pending.resolve(ok); setPending(null); };
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) answer(false); }} onKeyDown={(event) => { if (event.key === 'Escape') answer(false); }}>
     <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-label="Confirmação">
-      <span className="section-kicker">{pending.labels?.title ?? 'CONFIRMAÇÃO'}</span>
+      <span className="section-kicker">{pending.labels?.title ?? 'Confirmação'}</span>
       <p>{pending.message}</p>
       <div className="modal-footer"><span /><div>
         <button type="button" className="button-quiet" onClick={() => answer(false)}>{pending.labels?.cancel ?? 'Cancelar'}</button>

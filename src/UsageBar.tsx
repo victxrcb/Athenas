@@ -43,7 +43,7 @@ export function UsageBar() {
     <span className="usage-ram" title={`App ${megabytes(appBytes)} · Agentes ${megabytes(totalBytes - appBytes)}`}>App {megabytes(appBytes)}</span>
     {selected && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}>
       <div className="small-modal usage-modal" role="dialog" aria-modal="true" aria-label={`Cota de ${selected}`}>
-        <div className="modal-top"><span className="section-kicker">COTA · {selected}</span><button type="button" aria-label="Fechar modal" onClick={() => setSelected(null)}>×</button></div>
+        <div className="modal-top"><span className="section-kicker">Cota · {selected}</span><button type="button" aria-label="Fechar modal" onClick={() => setSelected(null)}>×</button></div>
         {detail?.error && <p className="usage-error">{detail.error}</p>}
         <div className="usage-window"><span>Sessão de 5 horas</span><strong>{detail?.fiveHour ? `${Math.round(detail.fiveHour.usedPercent)}% utilizada` : 'Indisponível'}</strong><small>Renova em {resetLabel(detail?.fiveHour?.resetsAt ?? null)}</small></div>
         <div className="usage-window"><span>Semana</span><strong>{detail?.weekly ? `${Math.round(detail.weekly.usedPercent)}% utilizada` : 'Indisponível'}</strong><small>Renova em {resetLabel(detail?.weekly?.resetsAt ?? null)}</small></div>

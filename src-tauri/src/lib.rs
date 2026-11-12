@@ -69,6 +69,7 @@ pub fn run() {
             orchestrator::orchestration_list,
             orchestrator::orchestration_delegate,
             orchestrator::orchestration_result,
+            orchestrator::orchestration_transcript,
             orchestrator::orchestration_resume,
             orchestrator::orchestration_land,
             orchestrator::orchestration_permission,

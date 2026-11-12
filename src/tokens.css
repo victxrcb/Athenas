@@ -1,0 +1,123 @@
+/*
+ * Athenas design tokens. Themes (themes.css) provide base colors; everything
+ * else in the UI should read the semantic tokens below.
+ */
+:root {
+  /* Surfaces: canvas → panel → raised → hover */
+  --surface-0: var(--bg-0);
+  --surface-1: var(--bg-1);
+  --surface-2: var(--bg-2);
+  --surface-3: var(--bg-3);
+  --border: var(--line);
+  --border-strong: var(--line-strong);
+
+  /* Text levels */
+  --text: var(--fg);
+  --text-dim: var(--fg-dim);
+  --text-muted: var(--fg-faint);
+
+  /* Accent: reserved for the primary action, selection and focus */
+  --accent: var(--blood);
+  --accent-hover: var(--blood-hover);
+  --accent-soft: color-mix(in srgb, var(--blood) 14%, transparent);
+  --accent-line: color-mix(in srgb, var(--blood) 45%, var(--line-strong));
+  --highlight: var(--gold);
+  --focus: color-mix(in srgb, var(--gold) 70%, var(--fg));
+
+  /* Status language — shared by sessions and workers */
+  --st-idle: var(--fg-faint);
+  --st-queued: var(--fg-dim);
+  --st-running: var(--info);
+  --st-waiting: var(--warning);
+  --st-attention: var(--warning);
+  --st-done: var(--success);
+  --st-landed: color-mix(in srgb, var(--success) 55%, var(--info));
+  --st-error: var(--error);
+  --st-cancelled: var(--fg-faint);
+
+  /* Type */
+  --font-ui: Inter, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+  --fs-2xs: 10.5px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 18px;
+  --fs-2xl: 24px;
+  --lh-tight: 1.25;
+  --lh: 1.5;
+
+  /* Space (4px grid) */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px; --sp-12: 48px;
+
+  /* Shape */
+  --r-xs: 3px; --r-sm: 5px; --r-md: 7px; --r-lg: 10px; --r-full: 999px;
+  --control-sm: 26px; --control: 32px; --control-lg: 38px;
+
+  /* Depth */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / .25);
+  --shadow-md: 0 8px 24px rgb(0 0 0 / .35), 0 0 0 1px rgb(0 0 0 / .2);
+  --shadow-lg: 0 24px 64px rgb(0 0 0 / .5), 0 0 0 1px rgb(0 0 0 / .25);
+
+  /* Motion */
+  --ease: cubic-bezier(.22, .61, .36, 1);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --dur-fast: .12s;
+  --dur: .16s;
+  --dur-slow: .24s;
+
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: var(--lh);
+  color: var(--text);
+  background: var(--surface-0);
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; min-width: 960px; background: var(--surface-0); }
+h1, h2, h3, p { margin-top: 0; }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; }
+code, kbd, pre { font-family: var(--font-mono); }
+kbd { font-size: var(--fs-2xs); color: var(--text-muted); font-weight: 400; letter-spacing: 0; }
+::selection { background: var(--selection); }
+input, textarea { caret-color: var(--text); }
+input::placeholder, textarea::placeholder { color: var(--text-muted); }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+:focus:not(:focus-visible) { outline: none; }
+
+/* Scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--border-strong); border: 3px solid transparent; background-clip: padding-box; border-radius: var(--r-full); }
+*::-webkit-scrollbar-thumb:hover { background-color: var(--text-muted); }
+.xterm .xterm-viewport { scrollbar-width: thin; }
+
+/* Shared keyframes */
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes drop-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes slide-in-right { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 5px transparent; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+@keyframes bounce-dot { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+@keyframes hero-in { from { opacity: 0; } to { opacity: var(--hero-opacity, .32); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,52 @@
+/* ============ Tool pages (Git, MCP, Skills, Orchestration) ============ */
+.tools-content { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-6) var(--sp-8) var(--sp-8); animation: fade-in var(--dur) var(--ease); }
+.tools-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-6); margin-bottom: var(--sp-5); padding-bottom: var(--sp-5); border-bottom: 1px solid var(--border); }
+.tools-heading h1 { margin: 4px 0 4px; font-size: var(--fs-2xl); font-weight: 600; letter-spacing: -.02em; }
+.tools-heading p { margin: 0; font-size: var(--fs-sm); color: var(--text-dim); }
+.tools-heading > button, .git-commit button { display: inline-flex; align-items: center; gap: 6px; height: var(--control); padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text); font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; transition: background-color var(--dur) var(--ease); }
+.tools-heading > button:hover, .git-commit button:hover { background: var(--surface-3); }
+.heading-actions { display: flex; align-items: flex-end; gap: var(--sp-2); }
+
+.git-meta { display: flex; align-items: center; gap: 8px; margin-bottom: var(--sp-4); font-size: var(--fs-md); font-weight: 500; }
+.git-meta svg { color: var(--text-muted); }
+.git-meta span { font-weight: 400; color: var(--text-dim); }
+.tools-columns { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.4fr); gap: var(--sp-4); }
+.tools-columns section { min-width: 0; min-height: 240px; padding: var(--sp-4); background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-md); }
+.tools-columns h2 { margin: 0 0 var(--sp-3); padding-bottom: var(--sp-3); border-bottom: 1px solid var(--border); font-size: var(--fs-md); font-weight: 600; }
+.tools-columns h2 small { font: 400 var(--fs-xs) var(--font-mono); color: var(--text-muted); }
+.tools-columns p { font-size: var(--fs-sm); color: var(--text-muted); }
+.tools-columns.lower { margin-top: var(--sp-4); }
+.tools-columns pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: var(--fs-xs); color: var(--text-dim); }
+.git-file { display: flex; align-items: center; border-radius: var(--r-xs); }
+.git-file:hover { background: var(--surface-2); }
+.git-file button { padding: 6px 8px; border: 0; background: transparent; color: var(--text-dim); font-size: var(--fs-sm); }
+.git-file button:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.git-file button:last-child { width: 26px; font-size: 15px; color: var(--text-muted); }
+.git-file button:hover { color: var(--text); }
+.git-file code { margin-right: 8px; font-size: var(--fs-2xs); color: var(--warning); }
+.git-commit { display: flex; gap: 6px; margin-top: var(--sp-3); }
+.git-commit input { flex: 1; height: var(--control); }
+.diff-view { max-height: 440px; overflow: auto; background: var(--surface-0); border: 1px solid var(--border); border-radius: var(--r-sm); }
+.diff-row { display: grid; grid-template-columns: 1fr 1fr; }
+.diff-row code { min-width: 0; overflow: hidden; padding: 1px 8px; border-right: 1px solid var(--border); white-space: pre; text-overflow: ellipsis; font-size: var(--fs-2xs); line-height: 1.6; color: var(--text-dim); }
+.diff-row .removed { background: color-mix(in srgb, var(--error) 14%, transparent); color: color-mix(in srgb, var(--error) 65%, var(--text)); }
+.diff-row .added { background: color-mix(in srgb, var(--success) 14%, transparent); color: color-mix(in srgb, var(--success) 65%, var(--text)); }
+.git-list-row { padding: 7px 4px; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); }
+.git-list-row small { color: var(--text-muted); }
+.mcp-source { display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font-size: var(--fs-sm); text-align: left; transition: background-color var(--dur) var(--ease); }
+.mcp-source:hover { background: var(--surface-2); }
+.mcp-source.selected { background: var(--surface-3); }
+.mcp-source small { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; font: var(--fs-2xs) var(--font-mono); color: var(--text-muted); }
+.mcp-columns section > h2:not(:first-child) { margin-top: var(--sp-5); }
+.mcp-columns textarea { width: 100%; min-height: 360px; resize: vertical; padding: 12px; background: var(--surface-0); border: 1px solid var(--border-strong); border-radius: var(--r-sm); color: var(--text); font: var(--fs-xs) var(--font-mono); line-height: 1.6; }
+.mcp-columns textarea:focus-visible { outline: 0; border-color: var(--focus); }
+.mcp-columns .button-primary { margin-top: var(--sp-3); }
+.skills-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--sp-3); }
+.skill-card { display: flex; justify-content: space-between; gap: 10px; padding: var(--sp-4); background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-md); transition: border-color var(--dur) var(--ease); animation: rise-in var(--dur-slow) var(--ease-out) both; }
+.skill-card:hover { border-color: var(--border-strong); }
+.skill-card span { font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.skill-card h2 { margin: 6px 0; font-size: var(--fs-md); font-weight: 600; }
+.skill-card p { margin: 0 0 8px; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-dim); }
+.skill-card small { font: 10px var(--font-mono); color: var(--text-muted); word-break: break-all; }
+.skill-card button { align-self: flex-start; width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-muted); }
+.skill-card button:hover { background: var(--surface-3); color: var(--text); }

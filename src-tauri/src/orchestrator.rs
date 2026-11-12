@@ -839,6 +839,50 @@ pub fn orchestration_result(
     )
 }
 
+/// Largest transcript tail sent to the board; older output stays on disk.
+const TRANSCRIPT_TAIL_BYTES: u64 = 512 * 1024;
+
+/// Reads the end of a file, dropping a partial first line when it had to cut.
+fn read_tail(path: &Path, limit: u64) -> Result<String, String> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(String::new()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let size = file.metadata().map_err(|e| e.to_string())?.len();
+    let start = size.saturating_sub(limit);
+    file.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    if start == 0 {
+        return Ok(text);
+    }
+    Ok(match text.find('\n') {
+        Some(index) => text[index + 1..].to_string(),
+        None => text,
+    })
+}
+
+/// Read-only view of a worker's transcript for the board; the leader never receives it.
+#[tauri::command]
+pub fn orchestration_transcript(
+    state: tauri::State<'_, Orchestrator>,
+    worker_id: String,
+) -> Result<Value, String> {
+    let worker = list(&state.db_path, None, None)?
+        .into_iter()
+        .find(|worker| worker.id == worker_id)
+        .ok_or("Worker não encontrado.")?;
+    let path = artifacts(&worker).join("transcript.log");
+    let size = fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+    Ok(json!({
+        "text": read_tail(&path, TRANSCRIPT_TAIL_BYTES)?,
+        "truncated": size > TRANSCRIPT_TAIL_BYTES,
+    }))
+}
+
 #[tauri::command]
 pub fn orchestration_resume(
     state: tauri::State<'_, Orchestrator>,
@@ -1170,6 +1214,16 @@ pub fn run_mcp_stdio(db_path: &Path, project: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transcript_tail_keeps_whole_lines() {
+        let path = std::env::temp_dir().join(format!("athenas-tail-{}.log", uuid::Uuid::new_v4()));
+        assert_eq!(read_tail(&path, 10).unwrap(), "");
+        fs::write(&path, "first line\nsecond\nthird\n").unwrap();
+        assert_eq!(read_tail(&path, 1024).unwrap(), "first line\nsecond\nthird\n");
+        assert_eq!(read_tail(&path, 10).unwrap(), "third\n");
+        fs::remove_file(&path).unwrap();
+    }
 
     fn repo() -> PathBuf {
         let root =

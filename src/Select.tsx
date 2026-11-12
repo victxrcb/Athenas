@@ -76,3 +76,8 @@ export function UncontrolledSelect({ options, initial, label }: { options: strin
   const [value, setValue] = useState(initial ?? options[0]);
   return <Select label={label} value={value} onChange={setValue} options={options} />;
 }
+
+/** Labelled select used in forms and toolbars; the label stays for screen readers and modal layouts. */
+export function SelectField<T extends string>({ label, value, options, onChange, icon }: { label: string; value: T; options: T[]; onChange: (value: T) => void; icon?: (value: T) => ReactNode }) {
+  return <div className="select-field"><span>{label}</span><Select label={label} value={value} options={options.map((option) => ({ value: option, label: option, icon: icon?.(option) }))} onChange={(next) => onChange(next as T)} /></div>;
+}
