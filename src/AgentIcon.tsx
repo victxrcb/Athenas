@@ -1,6 +1,7 @@
 import { Terminal } from 'lucide-react';
+import codexIcon from './assets/brand/codex-icon.png';
 
-/** Own simple marks for each agent (not the vendors' logos), colored to tell them apart at a glance. */
+/** Agent marks used throughout the app. */
 export function AgentIcon({ agent, size = 15 }: { agent: string; size?: number }) {
   if (agent === 'Claude Code') {
     return <svg className="agent-icon claude" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
@@ -10,10 +11,7 @@ export function AgentIcon({ agent, size = 15 }: { agent: string; size?: number }
     </svg>;
   }
   if (agent === 'Codex') {
-    return <svg className="agent-icon codex" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2.5l8.2 4.75v9.5L12 21.5l-8.2-4.75v-9.5L12 2.5z" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" />
-      <path d="M9.5 10l-2 2 2 2M14.5 10l2 2-2 2" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>;
+    return <img className="agent-icon codex" src={codexIcon} width={size} height={size} alt="" aria-hidden="true" />;
   }
   return <Terminal className="agent-icon shell" size={size} aria-hidden="true" />;
 }

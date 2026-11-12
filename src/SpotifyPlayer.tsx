@@ -1,5 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { Music2, Pause, Play, SkipBack, SkipForward } from 'lucide-react';
+import { Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import './spotify.css';
 
@@ -44,7 +44,10 @@ export function SpotifyPlayer() {
 
   return <section className="spotify-player" aria-label="Player do Spotify">
     <div className="spotify-track">
-      <div className="spotify-art" aria-hidden="true"><Music2 size={18} /></div>
+      <div className="spotify-art" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="12" fill="#1DB954" />
+        <path d="M5.2 9.2c4.5-1.3 9.9-.8 13.6 1.5M6.1 12.4c3.8-1 8.5-.5 11.7 1.4M7 15.4c3.1-.8 6.8-.3 9.5 1.2" stroke="#101810" strokeWidth="1.7" strokeLinecap="round" />
+      </svg></div>
       <div className="spotify-info">
         <span className="spotify-label">SPOTIFY</span>
         <strong title={track?.title}>{track?.title || 'Nada tocando'}</strong>
