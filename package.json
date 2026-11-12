@@ -1,7 +1,7 @@
 {
   "name": "athenas-agent",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "app": "tauri dev",
@@ -15,7 +15,7 @@
     "@fontsource/cinzel": "^5.2.8",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
-    "@tauri-apps/api": "2.11.0",
+    "@tauri-apps/api": "2.12.4",
     "@tauri-apps/plugin-dialog": "2.7.1",
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-updater": "^2.14.1",
