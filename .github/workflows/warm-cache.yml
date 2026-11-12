@@ -1,0 +1,29 @@
+name: warm-cache
+# Compila o app na master só para gravar o cache Rust que o workflow de release reaproveita.
+# (Runs disparados por tag só conseguem ler cache da branch padrão, não de outras tags.)
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src-tauri/**'
+      - 'package-lock.json'
+      - '.github/workflows/**'
+  workflow_dispatch:
+concurrency:
+  group: warm-cache
+  cancel-in-progress: true
+jobs:
+  warm:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: tauri-release
+      - run: npm ci
+      # Mesmo perfil/features do release, sem gerar instaladores nem assinar.
+      - run: npx tauri build --no-bundle
