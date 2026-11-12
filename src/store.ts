@@ -10,7 +10,7 @@ export type WorkspaceSnapshot = { groups: GroupInfo[]; projects: ProjectInfo[]; 
 export type AgentUsage = { agent: string; sessions: number; bytes: number; cpuPercent: number };
 export type MemorySnapshot = { totalBytes: number; appBytes: number; groups: { groupId: string; bytes: number; suspended: boolean }[]; agents: AgentUsage[] };
 export type Preferences = { claudeCommand: string; codexCommand: string; shellCommand: string; workerLimit: number; scrollbackMb: number; fontSize: number; reducedEffects: boolean };
-export type Section = 'home' | 'git' | 'mcp' | 'skills' | 'orchestrator';
+export type Section = 'home' | 'git' | 'mcp' | 'skills' | 'orchestrator' | 'mapping';
 /** Live orchestrator counters shown in navigation; polled once by the app shell. */
 export type WorkerSummary = { active: number; waiting: number };
 

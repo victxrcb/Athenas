@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { ChevronRight, Code2, Copy, FolderOpen, GitBranch, Home, MoreHorizontal, Network, Pencil, Plus, Plug, RotateCcw, Search, Settings2, Sparkles, Trash2, X } from 'lucide-react';
+import { ChevronRight, Code2, Copy, FolderOpen, GitBranch, Home, MoreHorizontal, Network, Pencil, Plus, Plug, RotateCcw, Search, Settings2, Sparkles, Trash2, Workflow, X } from 'lucide-react';
 import logo from './assets/brand/ui-logo.png';
 import { AgentIcon } from './AgentIcon';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -128,6 +128,7 @@ export function Sidebar() {
         hint={`${workerSummary.active} worker(s) em execução · ${workerSummary.waiting} precisando de atenção`}
         badge={workerSummary.waiting > 0 ? <span className="nav-badge attention" aria-label={`${workerSummary.waiting} aguardando`}>{workerSummary.waiting}</span>
           : workerSummary.active > 0 ? <span className="nav-badge live" aria-label={`${workerSummary.active} ativos`}><i />{workerSummary.active}</span> : undefined} />
+      <NavItem icon={<Workflow size={15} />} label="Mapeamento" active={section === 'mapping'} onClick={() => goSection('mapping')} />
       <NavItem icon={<GitBranch size={15} />} label="Git" active={section === 'git'} onClick={() => goSection('git')} />
       <NavItem icon={<Plug size={15} />} label="MCP" active={section === 'mcp'} onClick={() => goSection('mcp')} />
       <NavItem icon={<Sparkles size={15} />} label="Skills" active={section === 'skills'} onClick={() => goSection('skills')} />

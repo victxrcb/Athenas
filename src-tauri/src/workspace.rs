@@ -1,5 +1,5 @@
-use rusqlite::{params, Connection};
-use serde::Serialize;
+use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use std::{fs, sync::Mutex};
 use std::{path::PathBuf, process::Command};
 use tauri::{AppHandle, Manager};
@@ -54,7 +54,14 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 name TEXT NOT NULL, folder TEXT, layout TEXT NOT NULL DEFAULT 'auto', updated_at INTEGER NOT NULL);
             PRAGMA user_version = 1;
             COMMIT;").map_err(|e| e.to_string())?;
-    } else if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 {
+    } else if version != 1
+        && version != 2
+        && version != 3
+        && version != 4
+        && version != 5
+        && version != 6
+        && version != 7
+    {
         return Err(format!("Versão de banco não suportada: {version}"));
     }
     if version < 2 {
@@ -96,6 +103,12 @@ fn migrate(connection: &Connection) -> Result<(), String> {
         connection.execute_batch("BEGIN;
             ALTER TABLE projects ADD COLUMN icon TEXT;
             PRAGMA user_version = 6;
+            COMMIT;").map_err(|e| e.to_string())?;
+    }
+    if version < 7 {
+        connection.execute_batch("BEGIN;
+            CREATE TABLE mapping_layouts (scope TEXT PRIMARY KEY, layout_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
+            PRAGMA user_version = 7;
             COMMIT;").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -178,6 +191,113 @@ fn clean_name(name: String) -> Result<String, String> {
         return Err("O nome precisa ter entre 1 e 80 caracteres.".into());
     }
     Ok(name.into())
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MappingViewport {
+    pub x: f64,
+    pub y: f64,
+    pub zoom: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MappingNode {
+    pub session_id: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub minimized: bool,
+    pub hidden: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MappingLayout {
+    pub mode: String,
+    pub viewport: MappingViewport,
+    pub nodes: Vec<MappingNode>,
+}
+
+fn validate_mapping_scope(scope: &str) -> Result<(), String> {
+    if scope == "all" || uuid::Uuid::parse_str(scope).is_ok() {
+        Ok(())
+    } else {
+        Err("Escopo de mapeamento inválido.".into())
+    }
+}
+
+fn validate_mapping_layout(layout: &MappingLayout) -> Result<(), String> {
+    if !["terminal", "architecture"].contains(&layout.mode.as_str())
+        || !layout.viewport.x.is_finite()
+        || !layout.viewport.y.is_finite()
+        || !layout.viewport.zoom.is_finite()
+        || !(0.25..=2.0).contains(&layout.viewport.zoom)
+        || layout.nodes.len() > 500
+    {
+        return Err("Layout de mapeamento inválido.".into());
+    }
+    let valid = layout.nodes.iter().all(|node| {
+        uuid::Uuid::parse_str(&node.session_id).is_ok()
+            && node.x.is_finite()
+            && node.y.is_finite()
+            && node.width.is_finite()
+            && node.height.is_finite()
+            && (-100_000.0..=100_000.0).contains(&node.x)
+            && (-100_000.0..=100_000.0).contains(&node.y)
+            && (420.0..=1_600.0).contains(&node.width)
+            && (260.0..=1_200.0).contains(&node.height)
+    });
+    if valid {
+        Ok(())
+    } else {
+        Err("Janela de agente inválida.".into())
+    }
+}
+
+#[tauri::command]
+pub fn mapping_layout_get(
+    state: tauri::State<'_, WorkspaceDb>,
+    scope: String,
+) -> Result<Option<MappingLayout>, String> {
+    validate_mapping_scope(&scope)?;
+    let connection = state.0.lock().map_err(|e| e.to_string())?;
+    let stored: Option<String> = connection
+        .query_row(
+            "SELECT layout_json FROM mapping_layouts WHERE scope=?1",
+            [&scope],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let layout = stored
+        .map(|value| {
+            serde_json::from_str(&value).map_err(|_| "Layout de mapeamento corrompido.".to_string())
+        })
+        .transpose()?;
+    if let Some(value) = &layout {
+        validate_mapping_layout(value)?;
+    }
+    Ok(layout)
+}
+
+#[tauri::command]
+pub fn mapping_layout_save(
+    state: tauri::State<'_, WorkspaceDb>,
+    scope: String,
+    layout: MappingLayout,
+) -> Result<(), String> {
+    validate_mapping_scope(&scope)?;
+    validate_mapping_layout(&layout)?;
+    let json = serde_json::to_string(&layout).map_err(|e| e.to_string())?;
+    state.0.lock().map_err(|e| e.to_string())?.execute(
+        "INSERT INTO mapping_layouts (scope, layout_json, updated_at) VALUES (?1, ?2, unixepoch())
+         ON CONFLICT(scope) DO UPDATE SET layout_json=excluded.layout_json, updated_at=excluded.updated_at",
+        params![scope, json],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -463,7 +583,7 @@ mod tests {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         connection
             .execute("INSERT INTO groups (id, name) VALUES ('g1', 'Equipe')", [])
             .unwrap();
@@ -478,5 +598,30 @@ mod tests {
         connection
             .execute("UPDATE sessions SET pane_id = 'pane1' WHERE id = 's1'", [])
             .unwrap();
+    }
+
+    #[test]
+    fn mapping_layout_validation_rejects_unsafe_geometry() {
+        let valid = MappingLayout {
+            mode: "terminal".into(),
+            viewport: MappingViewport {
+                x: 10.0,
+                y: 20.0,
+                zoom: 1.0,
+            },
+            nodes: vec![MappingNode {
+                session_id: uuid::Uuid::new_v4().to_string(),
+                x: 0.0,
+                y: 0.0,
+                width: 620.0,
+                height: 420.0,
+                minimized: false,
+                hidden: false,
+            }],
+        };
+        assert!(validate_mapping_layout(&valid).is_ok());
+        let mut invalid = valid;
+        invalid.viewport.zoom = 4.0;
+        assert!(validate_mapping_layout(&invalid).is_err());
     }
 }

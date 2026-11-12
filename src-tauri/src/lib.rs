@@ -56,6 +56,8 @@ pub fn run() {
             workspace::project_set_icon,
             workspace::project_reveal,
             workspace::project_open_vscode,
+            workspace::mapping_layout_get,
+            workspace::mapping_layout_save,
             git_tools::git_snapshot,
             git_tools::git_file_diff,
             git_tools::git_stage,

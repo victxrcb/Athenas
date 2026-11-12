@@ -17,18 +17,20 @@ import { useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { lazy, Suspense } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { ArrowUpRight, ChevronDown, ChevronRight, FileText, GitBranch, Home as HomeIcon, Minus, Network, Plug, Plus, Search, Sparkles, Square, Terminal, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronRight, FileText, GitBranch, Home as HomeIcon, Minus, Network, Plug, Plus, Search, Sparkles, Square, Terminal, Workflow, X } from 'lucide-react';
 import logo from './assets/brand/ui-logo.png';
 import { Agent, Mode, useAppStore, type PaneInfo, type ProjectInfo, type Section, type SessionInfo, type WorkspaceSnapshot } from './store';
 const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ default: module.TerminalView })));
 const ToolsView = lazy(() => import('./ToolsView').then((module) => ({ default: module.ToolsView })));
 const OrchestratorView = lazy(() => import('./OrchestratorView').then((module) => ({ default: module.OrchestratorView })));
+const MappingView = lazy(() => import('./MappingView').then((module) => ({ default: module.MappingView })));
 const SettingsView = lazy(() => import('./SettingsView').then((module) => ({ default: module.SettingsView })));
 
 const agentOptions: Agent[] = ['Claude Code', 'Codex', 'Shell'];
 const modeOptions: Mode[] = ['Normal', 'Plan', 'Auto-aceitar'];
 const SECTION_TABS: Record<Exclude<Section, 'home'>, { label: string; icon: React.ReactNode }> = {
   orchestrator: { label: 'Orquestração', icon: <Network size={14} /> },
+  mapping: { label: 'Mapeamento', icon: <Workflow size={14} /> },
   git: { label: 'Git', icon: <GitBranch size={14} /> },
   mcp: { label: 'MCP', icon: <Plug size={14} /> },
   skills: { label: 'Skills', icon: <Sparkles size={14} /> },
@@ -223,6 +225,7 @@ export function App() {
   useEffect(() => { if (!isTauri()) return; const refresh = () => { void invoke<import('./store').MemorySnapshot>('group_metrics').then(state.setMemory).catch(() => undefined); }; refresh(); const timer = window.setInterval(refresh, 2000); return () => window.clearInterval(timer); }, [state.setMemory]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if ((event.target as HTMLElement | null)?.closest?.('.xterm')) return;
       if (event.key === 'Escape') { state.closeSession(); state.closeProject(); state.closeGroup(); state.setSettingsOpen(false); state.setPaletteOpen(false); state.setNotice(null); }
       if (!event.ctrlKey) return;
       if (!event.shiftKey && !event.altKey && (event.key === '=' || event.key === '+' || event.key === '-' || event.key === '0')) {
@@ -259,7 +262,8 @@ export function App() {
         <button className="tab-plus" aria-label="Nova sessão" title="Nova sessão (Ctrl T)" onClick={state.openSession}><Plus size={15} /></button>
         <div className="tab-spacer" /><UsageBar />
       </div>
-      {state.section === 'orchestrator' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><OrchestratorView /></Suspense>
+      {state.section === 'mapping' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><MappingView /></Suspense>
+        : state.section === 'orchestrator' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><OrchestratorView /></Suspense>
         : state.section !== 'home' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><ToolsView /></Suspense>
         : activeSession && activeSession.status === 'rodando' ? <Suspense fallback={<div className="terminal-loading">Carregando terminal…</div>}><TerminalView session={activeSession} onStatus={state.upsertSession} /></Suspense>
         : activeSession ? <EndedSession session={activeSession} onResume={() => void resumeActive(activeSession)} />

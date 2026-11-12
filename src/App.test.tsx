@@ -32,9 +32,29 @@ describe('home', () => {
     expect(palette.queryByRole('button', { name: /Novo projeto/ })).toBeNull();
   });
 
+  it('gives terminal keyboard shortcuts priority over global shortcuts', () => {
+    const { container } = render(<App />);
+    const terminal = document.createElement('div');
+    terminal.className = 'xterm';
+    const input = document.createElement('textarea');
+    terminal.appendChild(input);
+    container.appendChild(terminal);
+    fireEvent.keyDown(input, { key: 'p', ctrlKey: true });
+    expect(screen.queryByRole('dialog', { name: 'Paleta de comandos' })).toBeNull();
+  });
+
   it('opens Git tools and asks for a project when none is selected', async () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Git' }));
     expect(await screen.findByText('Escolha um projeto com pasta para usar Git.')).toBeTruthy();
+  });
+
+  it('opens the visual agent mapping from the sidebar', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Mapeamento' }));
+    expect(await screen.findByRole('heading', { name: 'Mapeamento' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Terminal/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Arquitetura/ })).toBeTruthy();
+    expect(screen.getByLabelText('Minimapa')).toBeTruthy();
   });
 });
