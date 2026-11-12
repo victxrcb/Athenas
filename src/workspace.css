@@ -56,7 +56,8 @@
 .terminal-tools .status-badge { margin-right: 6px; }
 .terminal-search { display: flex; gap: 6px; padding: 6px var(--sp-4); border-bottom: 1px solid var(--border); animation: drop-in var(--dur-fast) var(--ease-out); }
 .terminal-search input { width: 260px; height: 28px; font-size: var(--fs-xs); }
-.terminal-canvas { flex: 1; min-height: 0; padding: 10px 12px; }
+/* Fixed black canvas around xterm so the padding matches the terminal in every theme. */
+.terminal-canvas { flex: 1; min-height: 0; padding: 10px 12px; background: #0a0a0a; }
 .terminal-error { padding: 8px var(--sp-4); border-top: 1px solid color-mix(in srgb, var(--error) 35%, transparent); color: var(--error); font-size: var(--fs-xs); }
 .terminal-loading { margin: auto; display: flex; align-items: center; gap: 10px; color: var(--text-muted); font-size: var(--fs-sm); }
 .terminal-loading::before { content: ''; width: 12px; height: 12px; border: 1.5px solid var(--border-strong); border-top-color: var(--text-dim); border-radius: 50%; animation: spin .8s linear infinite; }

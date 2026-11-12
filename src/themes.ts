@@ -34,19 +34,19 @@ export function applyTheme(id: ThemeId) {
   window.dispatchEvent(new CustomEvent('athenas-theme'));
 }
 
-/** Reads the active palette so xterm follows the app theme. */
+/** The terminal keeps a fixed black/white palette; app themes only recolor the interface around it. */
+export const TERMINAL_BACKGROUND = '#0a0a0a';
+
 export function terminalPalette() {
-  const css = getComputedStyle(document.documentElement);
-  const read = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
-  const light = THEMES.some((theme) => theme.light && theme.id === document.documentElement.dataset.theme);
   return {
-    background: read('--bg-0', '#0a0a0a'),
-    foreground: read('--fg', '#ededed'),
-    cursor: read('--blood', '#ededed'),
-    selectionBackground: read('--selection', '#ffffff2e'),
-    black: light ? '#2a2620' : '#17171a', red: '#a74452', green: '#668d6a', yellow: '#ae9258',
-    blue: '#6a7fa0', magenta: '#937096', cyan: '#6b9294', white: read('--fg', '#d8d2c4'),
-    brightBlack: read('--fg-faint', '#5a5750'), brightRed: '#c25a68', brightGreen: '#85ab89', brightYellow: '#c2a96f',
-    brightBlue: '#8ea2bd', brightMagenta: '#aa89ae', brightCyan: '#87adae', brightWhite: light ? '#1b1813' : '#f1ede4',
+    background: TERMINAL_BACKGROUND,
+    foreground: '#ededed',
+    cursor: '#ededed',
+    cursorAccent: TERMINAL_BACKGROUND,
+    selectionBackground: '#ffffff40',
+    black: '#1a1a1a', red: '#e06c75', green: '#98c379', yellow: '#e5c07b',
+    blue: '#61afef', magenta: '#c678dd', cyan: '#56b6c2', white: '#d4d4d4',
+    brightBlack: '#7f7f7f', brightRed: '#ff7b86', brightGreen: '#b5e48c', brightYellow: '#ffd68a',
+    brightBlue: '#82c4ff', brightMagenta: '#d99cf0', brightCyan: '#7fd4de', brightWhite: '#ffffff',
   };
 }
