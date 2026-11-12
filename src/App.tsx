@@ -7,6 +7,7 @@ import { Select, UncontrolledSelect } from './Select';
 import { AgentIcon } from './AgentIcon';
 import { ProjectIcon } from './ProjectIcon';
 import { UsageBar } from './UsageBar';
+import { SpotifyPlayer } from './SpotifyPlayer';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { ProjectEditor } from './ProjectEditor';
 import { ConfirmHost } from './ConfirmHost';
@@ -91,7 +92,7 @@ function Sidebar() {
       {projectsFor(null).map(projectButton)}
       {sessions.length ? <div className="session-list">{sessions.map((session) => <div className="session-row" key={session.id}><button className={activeSessionId === session.id ? 'selected' : ''} onClick={() => { setSection('home'); setActiveProjectId(null); setActiveSessionId(session.id); }}><AgentIcon agent={session.agent} size={14} /><span>{session.agent}<small>{session.folder.split(/[\\/]/).pop()}</small></span><i className={session.status} title={session.status} /></button>{session.status !== 'rodando' && session.agent !== 'Shell' && <button className="resume-button" onClick={async () => { try { const resumed = await invoke<import('./store').SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, paneId: session.paneId, resume: true, cols: 100, rows: 30 }); upsertSession(resumed); setSection('home'); setActiveSessionId(resumed.id); } catch (error) { setNotice(String(error)); } }}>Retomar</button>}<button className="session-delete" aria-label="Excluir sessão" title="Excluir sessão" onClick={async () => { try { if (!(await confirmAction('Encerrar e excluir esta sessão e seu scrollback?'))) return; await deleteSession(session.id); if (activeSessionId === session.id) setActiveSessionId(null); } catch (error) { setNotice(String(error)); } }}><X size={12} /></button></div>)}</div> : workspace.projects.length === 0 && <div className="sidebar-empty"><p>Crie um projeto</p></div>}
     </div>
-    <div className="sidebar-bottom">{projectMenu && <ContextMenu x={projectMenu.x} y={projectMenu.y} items={projectMenuItems(projectMenu.project)} onClose={() => setProjectMenu(null)} />}{editingProject && <ProjectEditor project={editingProject} onClose={() => setEditingProject(null)} />}<LayoutPicker /><div className="account"><img src={logo} alt="" /><span>conta local <b>· Default</b></span><button className="account-settings" aria-label="Ajustes" title="Ajustes" onClick={() => useAppStore.getState().setSettingsOpen(true)}><Settings2 size={15} /></button></div></div>
+    <div className="sidebar-bottom">{projectMenu && <ContextMenu x={projectMenu.x} y={projectMenu.y} items={projectMenuItems(projectMenu.project)} onClose={() => setProjectMenu(null)} />}{editingProject && <ProjectEditor project={editingProject} onClose={() => setEditingProject(null)} />}<SpotifyPlayer /><LayoutPicker /><div className="account"><img src={logo} alt="" /><span>conta local <b>· Default</b></span><button className="account-settings" aria-label="Ajustes" title="Ajustes" onClick={() => useAppStore.getState().setSettingsOpen(true)}><Settings2 size={15} /></button></div></div>
   </aside>;
 }
 

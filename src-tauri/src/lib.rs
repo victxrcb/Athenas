@@ -3,6 +3,7 @@ mod mcp_config;
 pub mod orchestrator;
 mod settings;
 mod skills;
+mod spotify;
 mod terminal;
 mod usage;
 mod workspace;
@@ -38,6 +39,8 @@ pub fn run() {
             terminal::terminal_set_pane,
             terminal::group_metrics,
             usage::agent_quotas,
+            spotify::spotify_status,
+            spotify::spotify_control,
             terminal::group_suspend,
             terminal::terminal_save_image,
             workspace::workspace_list,
