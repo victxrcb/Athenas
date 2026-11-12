@@ -259,6 +259,29 @@ input[type="checkbox"]:checked::after { content: ""; width: 8px; height: 4px; bo
 .settings-grid label { display: grid; gap: 6px; font-size: var(--fs-xs); font-weight: 500; color: var(--text-dim); }
 .settings-grid .settings-check { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; font-weight: 400; font-size: var(--fs-sm); }
 
+/* Font picker (settings) */
+.font-picker { grid-column: 1 / -1; display: grid; gap: 8px; }
+.font-picker > span { font-size: var(--fs-xs); font-weight: 500; color: var(--text-dim); }
+.font-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.font-option { min-width: 0; display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text); font-size: var(--fs-xs); text-align: left; transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease); }
+.font-option:hover { border-color: var(--border-strong); background: var(--surface-3); }
+.font-option[aria-checked="true"] { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.font-option b { flex: none; font-size: 15px; font-weight: 600; color: var(--focus); }
+.font-option span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-option small { margin-left: auto; color: var(--text-muted); font-size: 9.5px; }
+.settings-grid .font-custom { display: grid; gap: 4px; }
+.font-custom input[aria-invalid="true"] { border-color: var(--danger, #e5484d); }
+.font-custom small { font-size: var(--fs-2xs); font-weight: 400; color: var(--text-muted); }
+
+/* Sidebar picker (settings) */
+.sidebar-picker { grid-column: 1 / -1; display: grid; gap: 8px; }
+.sidebar-picker > span { font-size: var(--fs-xs); font-weight: 500; color: var(--text-dim); }
+.sidebar-picker-box { display: grid; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); }
+.sidebar-picker-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.sidebar-picker-items button { display: inline-flex; align-items: center; gap: 6px; }
+.sidebar-picker-items button[aria-pressed="false"] { opacity: .55; text-decoration: line-through; }
+.sidebar-picker-box small { font-size: var(--fs-2xs); color: var(--text-muted); }
+
 /* Mascot picker (settings) */
 .mascot-picker { grid-column: 1 / -1; display: grid; gap: 8px; }
 .mascot-picker > span { font-size: var(--fs-xs); font-weight: 500; color: var(--text-dim); }

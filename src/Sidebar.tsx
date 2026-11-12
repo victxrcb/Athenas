@@ -9,6 +9,7 @@ import { ProjectEditor } from './ProjectEditor';
 import { ProjectIcon } from './ProjectIcon';
 import { SpotifyPlayer } from './SpotifyPlayer';
 import { confirmAction } from './confirm';
+import { SIDEBAR_ITEMS, useSidebarPrefs } from './sidebarPrefs';
 import { deleteSession } from './panes';
 import { displayPath, sameFolder } from './path';
 import { StatusDot, sessionStatus } from './status';
@@ -27,6 +28,7 @@ export function Sidebar() {
   const { openSession, openProject, sessions, activeSessionId, setActiveSessionId, upsertSession, setNotice, workspace, activeProjectId, setActiveProjectId, memory, setMemory, setSection, section, workerSummary } = useAppStore();
   const [projectMenu, setProjectMenu] = useState<{ x: number; y: number; project: ProjectInfo } | null>(null);
   const [editingProject, setEditingProject] = useState<ProjectInfo | null>(null);
+  const navPrefs = useSidebarPrefs();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggle = (key: string) => setCollapsed((current) => ({ ...current, [key]: !current[key] }));
 
@@ -122,17 +124,17 @@ export function Sidebar() {
       <button className="new-agent" onClick={openSession}><Plus size={15} /> Novo agente <kbd>Ctrl T</kbd></button>
       <button className="icon-button" aria-label="Buscar" title="Buscar (Ctrl P)" onClick={() => useAppStore.getState().setPaletteOpen(true)}><Search size={15} /></button>
     </div>
-    <nav className="sidebar-nav" aria-label="Navegação principal">
-      <NavItem icon={<Home size={15} />} label="Início" active={homeActive} onClick={goHome} />
-      <NavItem icon={<Network size={15} />} label="Orquestração" active={section === 'orchestrator'} onClick={() => goSection('orchestrator')}
+    {SIDEBAR_ITEMS.some((item) => navPrefs.items[item.id]) && <nav className="sidebar-nav" aria-label="Navegação principal">
+      {navPrefs.items.home && <NavItem icon={<Home size={15} />} label="Início" active={homeActive} onClick={goHome} />}
+      {navPrefs.items.orchestrator && <NavItem icon={<Network size={15} />} label="Orquestração" active={section === 'orchestrator'} onClick={() => goSection('orchestrator')}
         hint={`${workerSummary.active} worker(s) em execução · ${workerSummary.waiting} precisando de atenção`}
         badge={workerSummary.waiting > 0 ? <span className="nav-badge attention" aria-label={`${workerSummary.waiting} aguardando`}>{workerSummary.waiting}</span>
-          : workerSummary.active > 0 ? <span className="nav-badge live" aria-label={`${workerSummary.active} ativos`}><i />{workerSummary.active}</span> : undefined} />
-      <NavItem icon={<Workflow size={15} />} label="Mapeamento" active={section === 'mapping'} onClick={() => goSection('mapping')} />
-      <NavItem icon={<GitBranch size={15} />} label="Git" active={section === 'git'} onClick={() => goSection('git')} />
-      <NavItem icon={<Plug size={15} />} label="MCP" active={section === 'mcp'} onClick={() => goSection('mcp')} />
-      <NavItem icon={<Sparkles size={15} />} label="Skills" active={section === 'skills'} onClick={() => goSection('skills')} />
-    </nav>
+          : workerSummary.active > 0 ? <span className="nav-badge live" aria-label={`${workerSummary.active} ativos`}><i />{workerSummary.active}</span> : undefined} />}
+      {navPrefs.items.mapping && <NavItem icon={<Workflow size={15} />} label="Mapeamento" active={section === 'mapping'} onClick={() => goSection('mapping')} />}
+      {navPrefs.items.git && <NavItem icon={<GitBranch size={15} />} label="Git" active={section === 'git'} onClick={() => goSection('git')} />}
+      {navPrefs.items.mcp && <NavItem icon={<Plug size={15} />} label="MCP" active={section === 'mcp'} onClick={() => goSection('mcp')} />}
+      {navPrefs.items.skills && <NavItem icon={<Sparkles size={15} />} label="Skills" active={section === 'skills'} onClick={() => goSection('skills')} />}
+    </nav>}
     <div className="sidebar-content">
       <div className="sidebar-heading"><span>Projetos</span><button className="icon-button small" aria-label="Novo projeto" title="Novo projeto (Ctrl Shift P)" onClick={openProject}><Plus size={14} /></button></div>
       {workspace.groups.map((group) => {

@@ -1,23 +1,41 @@
 .mapping-view { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-0); }
-.mapping-topbar { height: 58px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--surface-1); }
-.mapping-heading { min-width: 174px; display: flex; align-items: center; gap: 9px; }
-.mapping-heading > span { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface-2); color: var(--focus); }
-.mapping-heading h1 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
+.mapping-topbar { position: relative; z-index: 9; height: 52px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 14px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, var(--surface-1), color-mix(in srgb, var(--surface-1) 92%, var(--surface-0))); }
+.mapping-heading { display: flex; align-items: center; gap: 10px; flex: none; }
+.mapping-heading > span { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--focus) 35%, var(--border-strong)); border-radius: var(--r-sm); background: color-mix(in srgb, var(--focus) 12%, var(--surface-2)); color: var(--focus); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 6%, transparent); }
+.mapping-heading h1 { margin: 0; font-size: var(--fs-md); font-weight: 600; letter-spacing: -.005em; line-height: 1.15; }
 .mapping-heading small { display: block; margin-top: 1px; color: var(--text-muted); font-size: var(--fs-2xs); }
-.mapping-project-filter { height: 36px; min-width: 155px; display: grid; align-content: center; gap: 1px; padding: 0 9px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-0); }
-.mapping-project-filter > span { color: var(--text-muted); font-size: 9px; line-height: 1; text-transform: uppercase; letter-spacing: .06em; }
-.mapping-project-filter select { min-width: 130px; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--fs-xs); }
-.mapping-summary { min-width: 108px; display: grid; gap: 1px; }
-.mapping-summary span { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-dim); }
-.mapping-summary span i { width: 6px; height: 6px; border-radius: 50%; background: var(--st-idle); }
-.mapping-summary span i.live { background: var(--st-running); box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-running) 15%, transparent); }
-.mapping-summary small { font-size: 9.5px; color: var(--text-muted); }
-.mapping-mode { height: 30px; display: flex; padding: 2px; margin-left: auto; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-0); }
-.mapping-mode button { display: flex; align-items: center; gap: 6px; padding: 0 9px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); }
-.mapping-mode button:hover { color: var(--text); }
-.mapping-mode button.active { background: var(--surface-3); color: var(--text); box-shadow: var(--shadow-sm); }
+.mapping-divider { width: 1px; height: 24px; flex: none; background: var(--border); }
+
+.mapping-project-filter { position: relative; height: 30px; min-width: 170px; display: flex; align-items: center; gap: 7px; padding: 0 28px 0 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-0); color: var(--text-muted); cursor: pointer; transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease); }
+.mapping-project-filter:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.mapping-project-filter:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px color-mix(in srgb, var(--focus) 35%, transparent); }
+.mapping-project-filter select { position: absolute; inset: 0; width: 100%; padding: 0 28px 0 31px; border: 0; outline: 0; appearance: none; background: transparent; color: var(--text); font-size: var(--fs-xs); cursor: pointer; }
+.mapping-project-filter select option { background: var(--surface-1); color: var(--text); }
+.mapping-project-filter > svg { position: relative; z-index: 0; pointer-events: none; }
+.mapping-select-caret { position: absolute !important; right: 9px; color: var(--text-muted); pointer-events: none; }
+
+.mapping-summary { display: flex; align-items: center; gap: 6px; flex: none; }
+.mapping-chip { height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid var(--border); border-radius: var(--r-full); background: var(--surface-2); color: var(--text-dim); font-size: var(--fs-2xs); font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mapping-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--st-idle); }
+.mapping-chip.live { border-color: color-mix(in srgb, var(--st-running) 35%, var(--border)); background: color-mix(in srgb, var(--st-running) 10%, var(--surface-2)); color: var(--text); }
+.mapping-chip.live i { background: var(--st-running); box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-running) 18%, transparent); animation: mapping-pulse 2s var(--ease) infinite; }
+.mapping-chip.muted { background: transparent; color: var(--text-muted); }
+@keyframes mapping-pulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--st-running) 4%, transparent); } }
+
+.mapping-mode { height: 30px; display: flex; flex: none; gap: 2px; padding: 2px; margin-left: auto; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-0); }
+.mapping-mode button { display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease); }
+.mapping-mode button:hover { color: var(--text); background: var(--surface-2); }
+.mapping-mode button.active { background: var(--surface-3); color: var(--text); font-weight: 500; box-shadow: var(--shadow-sm), inset 0 -2px 0 var(--focus); }
+.mapping-mode button.active svg { color: var(--focus); }
+
+.mapping-actions { display: flex; align-items: center; gap: 4px; flex: none; padding-left: 12px; border-left: 1px solid var(--border); }
+.mapping-action { height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--text-dim); font-size: var(--fs-xs); white-space: nowrap; transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease); }
+.mapping-action:hover { border-color: var(--border); background: var(--surface-2); color: var(--text); }
+.mapping-action:active { transform: translateY(1px); }
+.mapping-action.attention { border-color: color-mix(in srgb, var(--warning) 35%, var(--border)); background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); }
 
 .mapping-canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; cursor: grab; background-color: color-mix(in srgb, var(--surface-0) 94%, #001a16); background-image: radial-gradient(circle, color-mix(in srgb, var(--text-muted) 28%, transparent) 1px, transparent 1.2px); }
+.mapping-canvas::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 62%, color-mix(in srgb, var(--surface-0) 55%, transparent) 100%); }
 .mapping-canvas.panning, .mapping-canvas:active { cursor: grabbing; }
 .mapping-world { position: absolute; inset: 0; transform-origin: 0 0; pointer-events: none; will-change: transform; }
 .mapping-axis { position: absolute; z-index: 0; color: var(--text-muted); opacity: .45; pointer-events: none; }
@@ -77,9 +95,24 @@
 .mapping-empty strong { color: var(--text-dim); font-size: var(--fs-md); }
 .mapping-empty span { font-size: var(--fs-xs); }
 
-@media (max-width: 1220px) {
-  .mapping-heading { min-width: auto; }
-  .mapping-heading small, .mapping-summary small { display: none; }
-  .mapping-topbar > .button-ghost { padding-inline: 7px; }
-  .mapping-topbar > .button-ghost:not(:last-child) { font-size: 0; }
+/* Polimento dos nós e overlays */
+.mapping-node:hover:not(.selected) { border-color: color-mix(in srgb, var(--text-muted) 45%, var(--border-strong)); }
+.mapping-node.selected .mapping-window-header { background: linear-gradient(180deg, color-mix(in srgb, var(--focus) 9%, var(--surface-2)), var(--surface-2)); }
+.mapping-window-header { background: linear-gradient(180deg, color-mix(in srgb, var(--surface-3) 55%, var(--surface-2)), var(--surface-2)); }
+.mapping-node.selected .mapping-agent-icon { border-color: color-mix(in srgb, var(--focus) 45%, var(--border)); }
+.architecture-node { border-radius: var(--r-lg, var(--r-md)); }
+.architecture-node.selected { box-shadow: 0 0 0 1px color-mix(in srgb, var(--focus) 28%, transparent), 0 10px 30px -8px color-mix(in srgb, var(--focus) 30%, transparent), var(--shadow-lg); }
+.mapping-controls button:focus-visible, .mapping-window-actions button:focus-visible, .mapping-action:focus-visible, .mapping-mode button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.mapping-empty > svg { padding: 12px; width: 52px; height: 52px; border: 1px dashed var(--border-strong); border-radius: var(--r-md); color: var(--focus); background: color-mix(in srgb, var(--focus) 6%, transparent); }
+
+@media (max-width: 1280px) {
+  .mapping-heading small { display: none; }
+  .mapping-chip.muted { display: none; }
+  .mapping-action > span { display: none; }
+  .mapping-action { padding-inline: 8px; }
+}
+@media (max-width: 980px) {
+  .mapping-divider, .mapping-heading > div { display: none; }
+  .mapping-project-filter { min-width: 130px; }
+  .mapping-mode button { padding-inline: 8px; }
 }

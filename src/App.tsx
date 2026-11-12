@@ -6,9 +6,11 @@ import { ProjectIcon } from './ProjectIcon';
 import { UsageBar } from './UsageBar';
 import { ConfirmHost } from './ConfirmHost';
 import { applyTheme, loadTheme } from './themes';
+import { applyFont, loadFont } from './font';
 import { applyZoom, loadZoom, stepZoom } from './zoom';
 import { PanelActions } from './PanelActions';
 import { Sidebar } from './Sidebar';
+import { toggleSidebarHidden, useSidebarPrefs } from './sidebarPrefs';
 import { Home } from './Home';
 import { chooseFolder } from './folder';
 import { StatusDot, sessionStatus } from './status';
@@ -17,7 +19,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { lazy, Suspense } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { ArrowUpRight, ChevronDown, ChevronRight, FileText, GitBranch, Home as HomeIcon, Minus, Network, Plug, Plus, Search, Sparkles, Square, Terminal, Workflow, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronRight, FileText, GitBranch, Home as HomeIcon, Minus, Network, PanelLeftClose, PanelLeftOpen, Plug, Plus, Search, Sparkles, Square, Terminal, Workflow, X } from 'lucide-react';
 import logo from './assets/brand/ui-logo.png';
 import { Agent, Mode, useAppStore, type PaneInfo, type ProjectInfo, type Section, type SessionInfo, type WorkspaceSnapshot } from './store';
 const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ default: module.TerminalView })));
@@ -216,6 +218,8 @@ function CommandPalette() {
 
 export function App() {
   const state = useAppStore();
+  const sidebar = useSidebarPrefs();
+  useEffect(() => { applyFont(loadFont()); }, []);
   useEffect(() => { applyTheme(loadTheme()); void applyZoom(loadZoom()).catch((error) => useAppStore.getState().setNotice(`Não foi possível aplicar o zoom: ${error}`)); }, []);
   useEffect(() => startUpdateChecks((message) => useAppStore.getState().setNotice(message)), []);
   useWorkerSummaryPolling();
@@ -234,6 +238,7 @@ export function App() {
         void applyZoom(next).catch((error) => state.setNotice(`Não foi possível aplicar o zoom: ${error}`));
         return;
       }
+      if (event.key.toLowerCase() === 'b' && !event.shiftKey && !event.altKey) { event.preventDefault(); toggleSidebarHidden(); return; }
       if (event.key.toLowerCase() === 'p' && !event.shiftKey) { event.preventDefault(); state.setPaletteOpen(true); }
       if (event.key.toLowerCase() === 't') { event.preventDefault(); state.openSession(); }
       if (event.shiftKey && event.key.toLowerCase() === 'p') { event.preventDefault(); state.openProject(); }
@@ -253,8 +258,9 @@ export function App() {
   };
   return <div className="app-shell">
     <WindowBar />
-    <div className="workspace"><Sidebar /><main className="main-area">
+    <div className="workspace">{!sidebar.hidden && <Sidebar />}<main className="main-area">
       <div className="tab-bar" aria-label="Abas abertas">
+        <button className="tab-sidebar-toggle" aria-label={sidebar.hidden ? 'Mostrar barra lateral' : 'Ocultar barra lateral'} aria-pressed={!sidebar.hidden} title={`${sidebar.hidden ? 'Mostrar' : 'Ocultar'} barra lateral (Ctrl B)`} onClick={toggleSidebarHidden}>{sidebar.hidden ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}</button>
         <button className={`app-tab ${homeTabActive ? 'active' : ''}`} aria-current={homeTabActive ? 'page' : undefined} onClick={goHome}><HomeIcon size={14} /> Início {runningCount > 0 && <span className="tab-count" title={`${runningCount} sessão(ões) ativa(s)`}><i />{runningCount}</span>}</button>
         {state.section !== 'home' && <div className="app-tab active" aria-current="page">{SECTION_TABS[state.section].icon} {SECTION_TABS[state.section].label}<button className="tab-close" aria-label="Fechar aba" onClick={() => state.setSection('home')}><X size={12} /></button></div>}
         {state.section === 'home' && activeSession && <div className="app-tab active" aria-current="page"><AgentIcon agent={activeSession.agent} size={13} /> {activeSession.agent}<StatusDot info={sessionStatus(activeSession.status)} /><button className="tab-close" aria-label="Ocultar terminal" onClick={() => state.setActiveSessionId(null)}><X size={12} /></button></div>}

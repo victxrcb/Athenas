@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import {
-  Crosshair, Eye, Focus, LayoutGrid, Maximize2, Minus, Network,
+  ChevronDown, Crosshair, Eye, Focus, FolderTree, LayoutGrid, Maximize2, Minus, Network,
   RotateCcw, Scan, TerminalSquare, Workflow, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { AgentIcon } from './AgentIcon';
@@ -285,16 +285,22 @@ export function MappingView() {
 
   return <section className="mapping-view">
     <header className="mapping-topbar">
-      <div className="mapping-heading"><span><Workflow size={17} /></span><div><h1>Mapeamento</h1><small>Workspace visual de agentes</small></div></div>
-      <label className="mapping-project-filter"><span>Projeto</span><select aria-label="Filtrar projeto" value={scope} onChange={(event) => setScope(event.target.value)}><option value="all">Todos os projetos</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-      <div className="mapping-summary"><span><i className={runningCount ? 'live' : ''} />{runningCount} ativo(s)</span><small>{filteredSessions.length} agente(s) no mapa</small></div>
-      <div className="mapping-mode" aria-label="Modo de visualização">
+      <div className="mapping-heading"><span><Workflow size={16} /></span><div><h1>Mapeamento</h1><small>Workspace visual de agentes</small></div></div>
+      <span className="mapping-divider" aria-hidden="true" />
+      <label className="mapping-project-filter"><FolderTree size={14} /><select aria-label="Filtrar projeto" value={scope} onChange={(event) => setScope(event.target.value)}><option value="all">Todos os projetos</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><ChevronDown size={13} className="mapping-select-caret" /></label>
+      <div className="mapping-summary">
+        <span className={`mapping-chip ${runningCount ? 'live' : ''}`}><i />{runningCount} ativo(s)</span>
+        <span className="mapping-chip muted">{filteredSessions.length} agente(s) no mapa</span>
+      </div>
+      <div className="mapping-mode" role="group" aria-label="Modo de visualização">
         <button className={layout.mode === 'terminal' ? 'active' : ''} aria-pressed={layout.mode === 'terminal'} onClick={() => updateLayout((current) => ({ ...current, mode: 'terminal' }), true)}><TerminalSquare size={14} /> Terminal</button>
         <button className={layout.mode === 'architecture' ? 'active' : ''} aria-pressed={layout.mode === 'architecture'} onClick={() => updateLayout((current) => ({ ...current, mode: 'architecture' }), true)}><Network size={14} /> Arquitetura</button>
       </div>
-      {hiddenCount > 0 && <button className="button-ghost button-sm" onClick={restoreHidden}><Eye size={13} /> Exibir {hiddenCount} oculto(s)</button>}
-      <button className="button-ghost button-sm" onClick={() => { const next = arrangeMappingNodes(layoutRef.current.nodes, (id) => { const session = filteredSessions.find((item) => item.id === id); return session ? projectFor(session)?.id ?? 'loose' : 'loose'; }, layoutRef.current.mode); updateLayout((current) => ({ ...current, nodes: next }), true); window.requestAnimationFrame(() => fitAll()); }}><LayoutGrid size={14} /> Organizar agentes</button>
-      <button className="button-ghost button-sm" onClick={() => fitAll()}><Scan size={14} /> Ajustar</button>
+      <div className="mapping-actions">
+        {hiddenCount > 0 && <button className="mapping-action attention" onClick={restoreHidden}><Eye size={13} /> Exibir {hiddenCount} oculto(s)</button>}
+        <button className="mapping-action" title="Organizar agentes por projeto" onClick={() => { const next = arrangeMappingNodes(layoutRef.current.nodes, (id) => { const session = filteredSessions.find((item) => item.id === id); return session ? projectFor(session)?.id ?? 'loose' : 'loose'; }, layoutRef.current.mode); updateLayout((current) => ({ ...current, nodes: next }), true); window.requestAnimationFrame(() => fitAll()); }}><LayoutGrid size={14} /> <span>Organizar agentes</span></button>
+        <button className="mapping-action" title="Ajustar todos à tela" onClick={() => fitAll()}><Scan size={14} /> <span>Ajustar</span></button>
+      </div>
     </header>
     <div
       ref={canvasRef}

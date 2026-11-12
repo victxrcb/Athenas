@@ -4,7 +4,9 @@ import { X } from 'lucide-react';
 import { useAppStore, type Preferences } from './store';
 import { DEFAULT_THEME, THEMES, applyTheme, loadTheme, type ThemeId } from './themes';
 import { ZOOM_LEVELS, applyZoom, loadZoom, stepZoom } from './zoom';
-import { Minus, Plus } from 'lucide-react';
+import { Eye, EyeOff, Minus, Plus } from 'lucide-react';
+import { DEFAULT_FONT, FONT_PRESETS, applyFont, fontStack, isValidFontName, loadFont, type FontChoice } from './font';
+import { SIDEBAR_ITEMS, setSidebarHidden, setSidebarItem, useSidebarPrefs } from './sidebarPrefs';
 import { DEFAULT_MASCOT, MASCOT_COLORS, MASCOT_EYES, saveMascot, useMascot } from './mascot';
 import { MascotIcon } from './MascotIcon';
 
@@ -15,6 +17,9 @@ export function SettingsView() {
   const [theme, setTheme] = useState<ThemeId>(loadTheme);
   const [zoom, setZoom] = useState(loadZoom);
   const mascot = useMascot();
+  const sidebarPrefs = useSidebarPrefs();
+  const [font, setFont] = useState<FontChoice>(loadFont);
+  const [customFont, setCustomFont] = useState(() => loadFont().custom);
   // Ctrl +/−/0 can change the zoom while settings are open; keep the control in sync.
   useEffect(() => { const sync = (event: Event) => setZoom((event as CustomEvent<number>).detail); window.addEventListener('athenas-zoom', sync); return () => window.removeEventListener('athenas-zoom', sync); }, []);
   const changeZoom = (level: number) => { setZoom(level); void applyZoom(level).catch((error) => setNotice(`Não foi possível aplicar o zoom: ${error}`)); };
@@ -59,6 +64,27 @@ export function SettingsView() {
                 <button type="button" className="button-quiet button-sm" onClick={() => saveMascot(DEFAULT_MASCOT)}>Restaurar</button>
               </div>
             </div>
+          </div>
+        </div>
+        <div className="font-picker"><span>Fonte da interface</span>
+          <div className="font-options" role="radiogroup" aria-label="Fonte da interface">
+            {FONT_PRESETS.map((item) => <button type="button" key={item.id} role="radio" aria-checked={font.id === item.id} className="font-option" style={{ fontFamily: item.stack }} onClick={() => setFont(applyFont({ id: item.id, custom: font.custom }))}>
+              <b>Aa</b><span>{item.name}</span>{item.id === DEFAULT_FONT && <small>Padrão</small>}
+            </button>)}
+          </div>
+          <label className="font-custom">
+            <input aria-label="Fonte instalada personalizada" placeholder="Outra fonte instalada (ex.: Roboto, Fira Sans)" value={customFont} aria-invalid={customFont.trim() !== '' && !isValidFontName(customFont)}
+              onChange={(event) => { const value = event.target.value; setCustomFont(value); if (isValidFontName(value)) setFont(applyFont({ id: 'custom', custom: value })); else if (!value.trim() && font.id === 'custom') setFont(applyFont({ id: DEFAULT_FONT, custom: '' })); }} />
+            {font.id === 'custom' && <small style={{ fontFamily: fontStack(font) }}>Usando “{font.custom}”. Se não estiver instalada, a Inter é usada.</small>}
+          </label>
+        </div>
+        <div className="sidebar-picker"><span>Barra lateral</span>
+          <div className="sidebar-picker-box">
+            <div className="sidebar-picker-items" role="group" aria-label="Itens visíveis na barra lateral">
+              {SIDEBAR_ITEMS.map((item) => <button type="button" key={item.id} className="button-quiet button-sm mascot-chip" aria-pressed={sidebarPrefs.items[item.id]} onClick={() => setSidebarItem(item.id, !sidebarPrefs.items[item.id])}>{sidebarPrefs.items[item.id] ? <Eye size={12} /> : <EyeOff size={12} />}{item.label}</button>)}
+            </div>
+            <label className="settings-check"><input type="checkbox" checked={sidebarPrefs.hidden} onChange={(event) => setSidebarHidden(event.target.checked)} /> Ocultar barra lateral</label>
+            <small>Escolha os atalhos exibidos na navegação. Atalho para ocultar/mostrar: <kbd>Ctrl B</kbd></small>
           </div>
         </div>
         <label className="settings-check"><input type="checkbox" checked={draft.reducedEffects} onChange={(event) => setDraft((current) => ({ ...current, reducedEffects: event.target.checked }))} /> Fundo ASCII na tela inicial</label></div>

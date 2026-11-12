@@ -154,6 +154,9 @@
 .tab-close:hover { background: var(--surface-3); color: var(--text); }
 .tab-plus { width: 28px; height: 28px; align-self: center; display: grid; place-items: center; margin-left: 4px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-muted); }
 .tab-plus:hover { background: var(--surface-3); color: var(--text); }
+.tab-sidebar-toggle { width: 28px; height: 28px; flex: none; align-self: center; display: grid; place-items: center; margin-right: 6px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-muted); transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+.tab-sidebar-toggle:hover { background: var(--surface-3); color: var(--text); }
+.tab-sidebar-toggle[aria-pressed="false"] { color: var(--focus); }
 .tab-spacer { flex: 1; }
 
 /* Usage */
