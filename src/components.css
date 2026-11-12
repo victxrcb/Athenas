@@ -259,3 +259,14 @@ input[type="checkbox"]:checked::after { content: ""; width: 8px; height: 4px; bo
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3) var(--sp-4); }
 .settings-grid label { display: grid; gap: 6px; font-size: var(--fs-xs); font-weight: 500; color: var(--text-dim); }
 .settings-grid .settings-check { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; font-weight: 400; font-size: var(--fs-sm); }
+
+/* Zoom picker (settings) */
+.zoom-picker { grid-column: 1 / -1; display: grid; gap: 8px; }
+.zoom-picker > span { font-size: var(--fs-xs); font-weight: 500; color: var(--text-dim); }
+.zoom-picker > small { font-size: var(--fs-2xs); color: var(--text-muted); }
+.zoom-picker kbd { padding: 0 4px; border: 1px solid var(--border-strong); border-radius: var(--r-xs); }
+.zoom-control { display: flex; align-items: center; gap: 6px; }
+.zoom-steps { flex: 1; display: flex; gap: 2px; padding: 2px; background: var(--surface-0); border: 1px solid var(--border); border-radius: var(--r-sm); }
+.zoom-steps button { flex: 1; height: 24px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-dim); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease); }
+.zoom-steps button:hover { color: var(--text); }
+.zoom-steps button.active { background: var(--surface-3); color: var(--text); font-weight: 600; box-shadow: var(--shadow-sm); }

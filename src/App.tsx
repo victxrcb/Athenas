@@ -6,6 +6,7 @@ import { ProjectIcon } from './ProjectIcon';
 import { UsageBar } from './UsageBar';
 import { ConfirmHost } from './ConfirmHost';
 import { applyTheme, loadTheme } from './themes';
+import { applyZoom, loadZoom, stepZoom } from './zoom';
 import { PanelActions } from './PanelActions';
 import { Sidebar } from './Sidebar';
 import { Home } from './Home';
@@ -213,7 +214,7 @@ function CommandPalette() {
 
 export function App() {
   const state = useAppStore();
-  useEffect(() => { applyTheme(loadTheme()); }, []);
+  useEffect(() => { applyTheme(loadTheme()); void applyZoom(loadZoom()).catch((error) => useAppStore.getState().setNotice(`Não foi possível aplicar o zoom: ${error}`)); }, []);
   useEffect(() => startUpdateChecks((message) => useAppStore.getState().setNotice(message)), []);
   useWorkerSummaryPolling();
   useEffect(() => { if (isTauri()) void invoke<import('./store').Preferences>('settings_get').then(state.setPreferences).catch((error) => state.setNotice(String(error))); }, [state.setPreferences, state.setNotice]);
@@ -224,6 +225,12 @@ export function App() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { state.closeSession(); state.closeProject(); state.closeGroup(); state.setSettingsOpen(false); state.setPaletteOpen(false); state.setNotice(null); }
       if (!event.ctrlKey) return;
+      if (!event.shiftKey && !event.altKey && (event.key === '=' || event.key === '+' || event.key === '-' || event.key === '0')) {
+        event.preventDefault();
+        const next = event.key === '0' ? 1 : stepZoom(loadZoom(), event.key === '-' ? -1 : 1);
+        void applyZoom(next).catch((error) => state.setNotice(`Não foi possível aplicar o zoom: ${error}`));
+        return;
+      }
       if (event.key.toLowerCase() === 'p' && !event.shiftKey) { event.preventDefault(); state.setPaletteOpen(true); }
       if (event.key.toLowerCase() === 't') { event.preventDefault(); state.openSession(); }
       if (event.shiftKey && event.key.toLowerCase() === 'p') { event.preventDefault(); state.openProject(); }
