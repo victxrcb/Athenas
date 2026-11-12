@@ -46,6 +46,7 @@ input[type="number"]::-webkit-inner-spin-button{opacity:.4}
 input,textarea{caret-color:var(--gold)}
 input::placeholder,textarea::placeholder{color:var(--fg-faint)}
 input:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.command-box textarea:focus,.command-box textarea:focus-visible{outline:0;box-shadow:none}
 .modal input:focus-visible,.modal textarea:focus-visible{outline:0;border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
 ::selection{background:var(--selection)}
 button{cursor:pointer}button:disabled{cursor:default}

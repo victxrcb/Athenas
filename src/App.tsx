@@ -1,4 +1,5 @@
 import { confirmAction } from './confirm';
+import { startUpdateChecks } from './updater';
 import { displayPath, sameFolder } from './path';
 import { deleteSession } from './panes';
 import { LayoutPicker } from './LayoutPicker';
@@ -225,6 +226,7 @@ function CommandPalette() {
 export function App() {
   const state = useAppStore();
   useEffect(() => { applyTheme(loadTheme()); }, []);
+  useEffect(() => startUpdateChecks((message) => useAppStore.getState().setNotice(message)), []);
   const [agent, setAgent] = useState<Agent>('Claude Code');
   const [mode, setMode] = useState<Mode>('Normal');
   const [prompt, setPrompt] = useState('');

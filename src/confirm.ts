@@ -1,4 +1,5 @@
-type Request = { message: string; resolve: (ok: boolean) => void };
+export type ConfirmLabels = { title?: string; confirm?: string; cancel?: string };
+type Request = { message: string; resolve: (ok: boolean) => void; labels?: ConfirmLabels };
 type Listener = (request: Request | null) => void;
 
 let listener: Listener | null = null;
@@ -9,8 +10,8 @@ export function subscribeConfirm(next: Listener): () => void {
 }
 
 // window.confirm is unreliable inside the Tauri webview and cannot be themed, so the app renders its own dialog.
-export function confirmAction(message: string): Promise<boolean> {
+export function confirmAction(message: string, labels?: ConfirmLabels): Promise<boolean> {
   if (!listener) return Promise.resolve(window.confirm(message));
   const show = listener;
-  return new Promise((resolve) => show({ message, resolve }));
+  return new Promise((resolve) => show({ message, resolve, labels }));
 }
