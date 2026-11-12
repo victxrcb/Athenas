@@ -269,6 +269,11 @@ pub fn mcp_register_orchestrator(
             "args".into(),
             toml::Value::Array(args.into_iter().map(toml::Value::String).collect()),
         );
+        // Codex does not forward the parent environment to MCP servers unless listed here.
+        server.insert(
+            "env_vars".into(),
+            toml::Value::Array(vec![toml::Value::String(crate::links::SESSION_ENV.into())]),
+        );
         servers.insert(name.clone(), toml::Value::Table(server));
         write_config(
             &path,

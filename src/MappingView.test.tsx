@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MappingView } from './MappingView';
 import { useAppStore } from './store';
 
@@ -46,5 +46,43 @@ describe('MappingView', () => {
     await waitFor(() => expect(screen.queryByText('Claude Code')).toBeNull());
     expect(screen.getByText('Codex')).toBeTruthy();
     expect(screen.getByText('1 agente(s) no mapa')).toBeTruthy();
+  });
+
+  it('links two agents by dragging the cable onto another agent and removes the link', async () => {
+    const { container } = render(<MappingView />);
+    await waitFor(() => expect(screen.getByText('Claude Code')).toBeTruthy());
+    const target = container.querySelector<HTMLElement>('[data-session-id="session-b"]')!;
+    const original = document.elementFromPoint;
+    document.elementFromPoint = vi.fn(() => target) as typeof document.elementFromPoint;
+    try {
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Linkar Claude Code a outro agente' }), { button: 0, clientX: 10, clientY: 10 });
+      fireEvent.pointerMove(window, { clientX: 700, clientY: 100 });
+      fireEvent.pointerUp(window, { clientX: 700, clientY: 100 });
+    } finally {
+      document.elementFromPoint = original;
+    }
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('athenas-agent-links') ?? '[]')).toMatchObject([{ fromId: 'session-a', toId: 'session-b' }]));
+    await waitFor(() => expect(screen.getByText('Claude Code → Codex')).toBeTruthy());
+    expect(container.querySelectorAll('path.mapping-edge')).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remover link Claude Code → Codex' }));
+    await waitFor(() => expect(screen.queryByText('Claude Code → Codex')).toBeNull());
+    expect(JSON.parse(localStorage.getItem('athenas-agent-links')!)).toEqual([]);
+  });
+
+  it('does not let an agent command itself', async () => {
+    const { container } = render(<MappingView />);
+    await waitFor(() => expect(screen.getByText('Claude Code')).toBeTruthy());
+    const self = container.querySelector<HTMLElement>('[data-session-id="session-a"]')!;
+    const original = document.elementFromPoint;
+    document.elementFromPoint = vi.fn(() => self) as typeof document.elementFromPoint;
+    try {
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Linkar Claude Code a outro agente' }), { button: 0 });
+      fireEvent.pointerUp(window, {});
+    } finally {
+      document.elementFromPoint = original;
+    }
+    expect(container.querySelectorAll('path.mapping-edge')).toHaveLength(0);
+    expect(localStorage.getItem('athenas-agent-links')).toBeNull();
   });
 });

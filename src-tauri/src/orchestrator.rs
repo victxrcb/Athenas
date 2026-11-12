@@ -1087,6 +1087,14 @@ pub fn orchestration_land(
 }
 
 fn mcp_tools() -> Value {
+    let mut tools = hera_tools();
+    if let Some(list) = tools.get_mut("tools").and_then(Value::as_array_mut) {
+        list.extend(crate::links::mcp_tools());
+    }
+    tools
+}
+
+fn hera_tools() -> Value {
     json!({"tools":[
         {"name":"hera_delegate","description":"Delega uma tarefa a um worker Claude ou Codex em git worktree isolado.",
          "inputSchema":{"type":"object","properties":{"agent":{"type":"string","enum":["claude","codex"]},
@@ -1102,6 +1110,12 @@ fn mcp_tools() -> Value {
 }
 
 fn mcp_call(db_path: &Path, project: &str, name: &str, args: &Value) -> Result<Value, String> {
+    if let Some(result) = db_path
+        .parent()
+        .and_then(|data_dir| crate::links::mcp_call(data_dir, name, args))
+    {
+        return result;
+    }
     match name {
         "hera_delegate" => {
             if args.get("worktree").and_then(Value::as_bool) == Some(false) {

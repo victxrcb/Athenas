@@ -116,3 +116,19 @@
   .mapping-project-filter { min-width: 130px; }
   .mapping-mode button { padding-inline: 8px; }
 }
+
+/* Agent links: a directed edge means the source agent commands the target. */
+.mapping-edges #mapping-arrow path { fill: color-mix(in srgb, var(--focus) 80%, var(--text)); }
+.mapping-edge { fill: none; stroke: color-mix(in srgb, var(--focus) 70%, var(--border-strong)); stroke-width: 2; stroke-linecap: round; }
+.mapping-edge.active { stroke: var(--st-running); stroke-width: 3; stroke-dasharray: 10 8; animation: mapping-edge-flow .6s linear infinite; }
+.mapping-edge.draft { stroke: var(--focus); stroke-dasharray: 6 6; opacity: .85; }
+@keyframes mapping-edge-flow { to { stroke-dashoffset: -18; } }
+.mapping-link-controls { position: absolute; left: 0; top: 0; z-index: 3; display: flex; align-items: center; gap: 2px; padding: 2px 3px 2px 8px; transform-origin: 0 0; pointer-events: auto; border: 1px solid color-mix(in srgb, var(--focus) 40%, var(--border-strong)); border-radius: var(--r-full); background: var(--surface-1); box-shadow: var(--shadow-md); white-space: nowrap; }
+.mapping-link-controls span { margin-right: 4px; color: var(--text-dim); font-size: var(--fs-2xs); }
+.mapping-link-controls button { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-full); background: transparent; color: var(--text-muted); }
+.mapping-link-controls button:hover { background: var(--surface-3); color: var(--text); }
+.mapping-link-port { width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--focus); cursor: crosshair; touch-action: none; }
+.mapping-link-port:hover { background: color-mix(in srgb, var(--focus) 16%, var(--surface-3)); }
+.mapping-canvas.linking, .mapping-canvas.linking * { cursor: crosshair !important; }
+.mapping-canvas.linking .terminal-view { pointer-events: none; }
+.mapping-node.link-target { border-color: var(--st-running); box-shadow: 0 0 0 2px color-mix(in srgb, var(--st-running) 45%, transparent), var(--shadow-lg); }

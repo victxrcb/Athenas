@@ -1,8 +1,9 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import {
-  ChevronDown, Crosshair, Eye, Focus, FolderTree, LayoutGrid, Maximize2, Minus, Network,
-  RotateCcw, Scan, TerminalSquare, Workflow, X, ZoomIn, ZoomOut,
+  Cable, ChevronDown, Crosshair, Eye, Focus, FolderTree, LayoutGrid, Maximize2, Megaphone, Minus, Network,
+  RotateCcw, Scan, TerminalSquare, Unlink, Workflow, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { AgentIcon } from './AgentIcon';
 import { StatusBadge, StatusDot, sessionStatus } from './status';
@@ -13,6 +14,10 @@ import {
   mergeMappingLayout, nodeDisplaySize, type MappingLayout, type MappingMode,
   type MappingNode, type MappingViewport,
 } from './mapping';
+import {
+  createLink, deleteLink, introduceLeader, linkAnchors, linkMidpoint, linkPath, listLinks,
+  type AgentLink, type Point,
+} from './links';
 import './mapping.css';
 
 const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ default: module.TerminalView })));
@@ -20,6 +25,10 @@ const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ def
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2;
 const STORAGE_PREFIX = 'athenas-mapping:';
+/** The edge SVG is offset so negative world coordinates stay inside its box. */
+const EDGE_ORIGIN = 100000;
+
+const linkKey = (fromId: string, toId: string) => `${fromId}->${toId}`;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -46,14 +55,16 @@ type AgentWindowProps = {
   node: MappingNode;
   mode: MappingMode;
   selected: boolean;
+  linkTarget: boolean;
   zoom: number;
   onSelect: (id: string) => void;
   onFocus: (id: string) => void;
   onChange: (id: string, patch: Partial<MappingNode>, persist?: boolean) => void;
+  onLinkStart: (id: string, event: React.PointerEvent<HTMLElement>) => void;
 };
 
 const AgentWindow = memo(function AgentWindow({
-  session, project, node, mode, selected, zoom, onSelect, onFocus, onChange,
+  session, project, node, mode, selected, linkTarget, zoom, onSelect, onFocus, onChange, onLinkStart,
 }: AgentWindowProps) {
   const interaction = useRef<{
     kind: 'move' | 'resize'; startX: number; startY: number; node: MappingNode;
@@ -87,9 +98,17 @@ const AgentWindow = memo(function AgentWindow({
     onChange(session.id, {}, true);
   };
 
+  const linkButton = <button
+    className="mapping-link-port"
+    aria-label={`Linkar ${session.agent} a outro agente`}
+    title="Arraste até outro agente para que este o comande"
+    onPointerDown={(event) => { event.stopPropagation(); onLinkStart(session.id, event); }}
+  ><Cable size={13} /></button>;
+
   if (mode === 'architecture') {
     return <article
-      className={`mapping-node architecture-node ${selected ? 'selected' : ''}`}
+      data-session-id={session.id}
+      className={`mapping-node architecture-node ${selected ? 'selected' : ''} ${linkTarget ? 'link-target' : ''}`}
       style={{ transform: `translate(${node.x}px, ${node.y}px)`, width: ARCHITECTURE_NODE_SIZE.width, height: ARCHITECTURE_NODE_SIZE.height }}
       onPointerDown={() => onSelect(session.id)}
     >
@@ -97,6 +116,7 @@ const AgentWindow = memo(function AgentWindow({
         <span className="mapping-agent-icon"><AgentIcon agent={session.agent} size={17} /></span>
         <div><strong>{session.agent}</strong><small>{project?.name ?? 'Sessão avulsa'}</small></div>
         <StatusDot info={status} />
+        <span onPointerDown={(event) => event.stopPropagation()}>{linkButton}</span>
       </header>
       <div className="architecture-body"><StatusBadge info={status} /><p>Sem tarefa estruturada disponível</p></div>
       <button className="architecture-focus" aria-label={`Focar ${session.agent}`} title="Focar agente" onClick={() => onFocus(session.id)}><Focus size={13} /></button>
@@ -104,7 +124,8 @@ const AgentWindow = memo(function AgentWindow({
   }
 
   return <article
-    className={`mapping-node terminal-node ${selected ? 'selected' : ''} ${node.minimized ? 'minimized' : ''}`}
+    data-session-id={session.id}
+    className={`mapping-node terminal-node ${selected ? 'selected' : ''} ${node.minimized ? 'minimized' : ''} ${linkTarget ? 'link-target' : ''}`}
     style={{ transform: `translate(${node.x}px, ${node.y}px)`, width: size.width, height: size.height }}
     onPointerDown={() => onSelect(session.id)}
   >
@@ -113,6 +134,7 @@ const AgentWindow = memo(function AgentWindow({
       <div className="mapping-window-title"><strong>{session.agent}</strong><small>{project?.name ?? 'Sessão avulsa'}</small></div>
       <StatusBadge info={status} />
       <div className="mapping-window-actions" onPointerDown={(event) => event.stopPropagation()}>
+        {linkButton}
         <button aria-label="Focar janela" title="Focar" onClick={() => onFocus(session.id)}><Crosshair size={13} /></button>
         <button aria-label="Expandir janela" title="Expandir" onClick={() => onChange(session.id, { width: 1000, height: 680, minimized: false }, true)}><Maximize2 size={13} /></button>
         <button aria-label={node.minimized ? 'Restaurar janela' : 'Minimizar janela'} title={node.minimized ? 'Restaurar' : 'Minimizar'} onClick={() => onChange(session.id, { minimized: !node.minimized }, true)}><Minus size={13} /></button>
@@ -175,6 +197,11 @@ export function MappingView() {
   const layoutRef = useRef(layout);
   const panRef = useRef<{ x: number; y: number; viewport: MappingViewport } | null>(null);
   const saveTimer = useRef<number | null>(null);
+  const [links, setLinks] = useState<AgentLink[]>([]);
+  const [linkDrag, setLinkDrag] = useState<{ fromId: string; point: Point; targetId: string | null } | null>(null);
+  const [flashing, setFlashing] = useState<Set<string>>(() => new Set());
+  const linkDragRef = useRef(linkDrag);
+  linkDragRef.current = linkDrag;
 
   const projectFor = useCallback((session: SessionInfo) => projects.find((project) => sameFolder(session.folder, project.folder)), [projects]);
   const filteredSessions = useMemo(() => sessions.filter((session) => scope === 'all' || projectFor(session)?.id === scope), [sessions, scope, projectFor]);
@@ -233,6 +260,75 @@ export function MappingView() {
 
   useEffect(() => () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void listLinks().then((value) => { if (!cancelled) setLinks(value); })
+      .catch((error) => { if (!cancelled) setNotice(`Não foi possível carregar os links: ${error}`); });
+    return () => { cancelled = true; };
+  }, [setNotice]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const timers: number[] = [];
+    const unlisten = listen<{ id: number; fromId: string | null; toId: string; error: string | null }>('agent-message', (event) => {
+      const { fromId, toId, error } = event.payload;
+      if (error) { setNotice(`Mensagem entre agentes não entregue: ${error}`); return; }
+      if (!fromId) return;
+      const key = linkKey(fromId, toId);
+      setFlashing((current) => new Set(current).add(key));
+      timers.push(window.setTimeout(() => setFlashing((current) => { const next = new Set(current); next.delete(key); return next; }), 1600));
+    });
+    return () => { timers.forEach((timer) => window.clearTimeout(timer)); void unlisten.then((stop) => stop()); };
+  }, [setNotice]);
+
+  const toWorld = useCallback((clientX: number, clientY: number): Point => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const { viewport } = layoutRef.current;
+    return { x: (clientX - (rect?.left ?? 0) - viewport.x) / viewport.zoom, y: (clientY - (rect?.top ?? 0) - viewport.y) / viewport.zoom };
+  }, []);
+
+  const startLink = useCallback((fromId: string, event: React.PointerEvent<HTMLElement>) => {
+    if (event.button > 0) return;
+    event.preventDefault();
+    setSelectedId(fromId);
+    setLinkDrag({ fromId, point: toWorld(event.clientX, event.clientY), targetId: null });
+  }, [toWorld]);
+
+  const linkActive = linkDrag !== null;
+  useEffect(() => {
+    if (!linkActive) return;
+    const targetAt = (event: PointerEvent) => {
+      const element = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+      return element?.closest<HTMLElement>('[data-session-id]')?.dataset.sessionId ?? null;
+    };
+    const move = (event: PointerEvent) => {
+      const targetId = targetAt(event);
+      setLinkDrag((current) => current && { ...current, point: toWorld(event.clientX, event.clientY), targetId: targetId === current.fromId ? null : targetId });
+    };
+    const up = (event: PointerEvent) => {
+      const targetId = targetAt(event);
+      const current = linkDragRef.current;
+      setLinkDrag(null);
+      if (current && targetId && targetId !== current.fromId) {
+        void createLink(current.fromId, targetId).then(setLinks).catch((error) => setNotice(`Não foi possível criar o link: ${error instanceof Error ? error.message : error}`));
+      }
+    };
+    const cancel = (event: KeyboardEvent) => { if (event.key === 'Escape') setLinkDrag(null); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('keydown', cancel);
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('keydown', cancel); };
+  }, [linkActive, setNotice, toWorld]);
+
+  const removeLink = useCallback((link: AgentLink) => {
+    void deleteLink(link.fromId, link.toId).then(setLinks).catch((error) => setNotice(`Não foi possível remover o link: ${error}`));
+  }, [setNotice]);
+  const introduce = useCallback((fromId: string) => {
+    void introduceLeader(fromId)
+      .then(() => setNotice('Briefing enviado ao agente líder.'))
+      .catch((error) => setNotice(`Não foi possível avisar o líder: ${error instanceof Error ? error.message : error}`));
+  }, [setNotice]);
+
   const patchNode = useCallback((id: string, patch: Partial<MappingNode>, save = false) => {
     updateLayout((current) => ({ ...current, nodes: current.nodes.map((node) => node.sessionId === id ? { ...node, ...patch } : node) }), save);
   }, [updateLayout]);
@@ -282,6 +378,18 @@ export function MappingView() {
   const hiddenCount = layout.nodes.filter((node) => node.hidden).length;
   const runningCount = filteredSessions.filter((session) => session.status === 'rodando').length;
   const grid = 24 * layout.viewport.zoom;
+  const visibleIds = new Set(filteredSessions.filter((session) => { const node = nodesById.get(session.id); return node && !node.hidden; }).map((session) => session.id));
+  const drawnLinks = links.flatMap((link) => {
+    const from = nodesById.get(link.fromId);
+    const to = nodesById.get(link.toId);
+    if (!from || !to || !visibleIds.has(link.fromId) || !visibleIds.has(link.toId)) return [];
+    const { start, end } = linkAnchors(from, to, layout.mode);
+    return [{ link, start, end, mid: linkMidpoint(start, end), key: linkKey(link.fromId, link.toId) }];
+  });
+  const dragSource = linkDrag ? nodesById.get(linkDrag.fromId) : undefined;
+  const dragSize = dragSource ? nodeDisplaySize(dragSource, layout.mode) : null;
+  const dragStart = dragSource && dragSize ? { x: dragSource.x + dragSize.width / 2, y: dragSource.y + dragSize.height / 2 } : null;
+  const agentName = (id: string) => sessions.find((session) => session.id === id)?.agent ?? 'Agente';
 
   return <section className="mapping-view">
     <header className="mapping-topbar">
@@ -291,6 +399,7 @@ export function MappingView() {
       <div className="mapping-summary">
         <span className={`mapping-chip ${runningCount ? 'live' : ''}`}><i />{runningCount} ativo(s)</span>
         <span className="mapping-chip muted">{filteredSessions.length} agente(s) no mapa</span>
+        {drawnLinks.length > 0 && <span className="mapping-chip muted"><Cable size={11} />{drawnLinks.length} link(s)</span>}
       </div>
       <div className="mapping-mode" role="group" aria-label="Modo de visualização">
         <button className={layout.mode === 'terminal' ? 'active' : ''} aria-pressed={layout.mode === 'terminal'} onClick={() => updateLayout((current) => ({ ...current, mode: 'terminal' }), true)}><TerminalSquare size={14} /> Terminal</button>
@@ -304,7 +413,7 @@ export function MappingView() {
     </header>
     <div
       ref={canvasRef}
-      className={`mapping-canvas ${panRef.current ? 'panning' : ''}`}
+      className={`mapping-canvas ${panRef.current ? 'panning' : ''} ${linkDrag ? 'linking' : ''}`}
       style={{ backgroundSize: `${grid}px ${grid}px`, backgroundPosition: `${layout.viewport.x % grid}px ${layout.viewport.y % grid}px` }}
       onWheel={(event) => {
         if ((event.target as HTMLElement).closest('.terminal-view')) return;
@@ -313,7 +422,7 @@ export function MappingView() {
         else { updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: current.viewport.x - event.deltaX, y: current.viewport.y - event.deltaY } })); scheduleSave(); }
       }}
       onPointerDown={(event) => {
-        if (event.button !== 0 || (event.target as HTMLElement).closest('.mapping-node, .mapping-controls, .mapping-minimap')) return;
+        if (event.button !== 0 || (event.target as HTMLElement).closest('.mapping-node, .mapping-controls, .mapping-minimap, .mapping-link-controls')) return;
         panRef.current = { x: event.clientX, y: event.clientY, viewport: layout.viewport };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
@@ -327,11 +436,24 @@ export function MappingView() {
     >
       <div className="mapping-world" style={{ transform: `translate(${layout.viewport.x}px, ${layout.viewport.y}px) scale(${layout.viewport.zoom})` }}>
         <div className="mapping-axis axis-x"><span>X</span></div><div className="mapping-axis axis-y"><span>Y</span></div><div className="mapping-origin">0,0</div>
-        <svg className="mapping-edges" aria-hidden="true" />
+        <svg className="mapping-edges" aria-hidden="true">
+          <defs>
+            <marker id="mapping-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
+          </defs>
+          <g transform={`translate(${EDGE_ORIGIN} ${EDGE_ORIGIN})`}>
+            {drawnLinks.map(({ key, start, end }) => <path key={key} className={`mapping-edge ${flashing.has(key) ? 'active' : ''}`} d={linkPath(start, end)} markerEnd="url(#mapping-arrow)" />)}
+            {linkDrag && dragStart && <path className="mapping-edge draft" d={linkPath(dragStart, linkDrag.point)} markerEnd="url(#mapping-arrow)" />}
+          </g>
+        </svg>
+        {drawnLinks.map(({ key, link, mid }) => <div key={key} className="mapping-link-controls" style={{ transform: `translate(${mid.x}px, ${mid.y}px) translate(-50%, -50%) scale(${1 / Math.max(layout.viewport.zoom, 0.6)})` }}>
+          <span title={`${agentName(link.fromId)} comanda ${agentName(link.toId)}`}>{agentName(link.fromId)} → {agentName(link.toId)}</span>
+          <button aria-label={`Avisar ${agentName(link.fromId)} sobre os agentes que comanda`} title="Enviar briefing ao líder" onClick={() => introduce(link.fromId)}><Megaphone size={12} /></button>
+          <button aria-label={`Remover link ${agentName(link.fromId)} → ${agentName(link.toId)}`} title="Remover link" onClick={() => removeLink(link)}><Unlink size={12} /></button>
+        </div>)}
         {loaded && filteredSessions.map((session) => {
           const node = nodesById.get(session.id);
           if (!node || node.hidden) return null;
-          return <AgentWindow key={session.id} session={session} project={projectFor(session) ?? null} node={node} mode={layout.mode} selected={selectedId === session.id} zoom={layout.viewport.zoom} onSelect={setSelectedId} onFocus={focusNode} onChange={patchNode} />;
+          return <AgentWindow key={session.id} session={session} project={projectFor(session) ?? null} node={node} mode={layout.mode} selected={selectedId === session.id} linkTarget={linkDrag?.targetId === session.id} zoom={layout.viewport.zoom} onSelect={setSelectedId} onFocus={focusNode} onChange={patchNode} onLinkStart={startLink} />;
         })}
       </div>
       {!loaded && <div className="mapping-empty">Carregando organização…</div>}

@@ -318,6 +318,9 @@ pub fn terminal_start(
         }
     }
     builder.cwd(&folder);
+    let session_id = uuid::Uuid::new_v4().to_string();
+    // Inherited by the agent's MCP servers so the Athenas MCP knows which session is calling.
+    builder.env(crate::links::SESSION_ENV, &session_id);
     let resume_id = if agent == "Claude Code" {
         if resume && resume_id.is_none() {
             return Err("Esta sessão Claude não tem ID para retomada.".into());
@@ -357,7 +360,7 @@ pub fn terminal_start(
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let info = SessionInfo {
-        id: uuid::Uuid::new_v4().to_string(),
+        id: session_id,
         agent,
         folder: folder.to_string_lossy().into_owned(),
         command,
@@ -452,11 +455,16 @@ pub fn terminal_write(
     id: String,
     data: String,
 ) -> Result<(), String> {
+    write_session(&state, &id, &data)
+}
+
+/// Writes raw input into a running session's PTY (used by the UI and by agent-to-agent messages).
+pub fn write_session(state: &TerminalState, id: &str, data: &str) -> Result<(), String> {
     let session = state
         .sessions
         .lock()
         .map_err(|e| e.to_string())?
-        .get(&id)
+        .get(id)
         .cloned()
         .ok_or("Sessão encerrada.")?;
     let mut session = session.lock().map_err(|e| e.to_string())?;
@@ -572,8 +580,9 @@ pub fn terminal_stop(app: AppHandle, state: tauri::State<'_, TerminalState>, id:
 }
 
 #[tauri::command]
-pub fn terminal_delete(state: tauri::State<'_, TerminalState>, id: String) -> Result<(), String> {
+pub fn terminal_delete(app: AppHandle, state: tauri::State<'_, TerminalState>, id: String) -> Result<(), String> {
     if uuid::Uuid::parse_str(&id).is_err() { return Err("ID inválido.".into()); }
+    crate::links::forget_session(&app, &id);
     state.deleted_sessions.lock().map_err(|e| e.to_string())?.insert(id.clone());
     if let Some(session) = state.sessions.lock().map_err(|e| e.to_string())?.get(&id).cloned() {
         let _ = session.lock().map_err(|e| e.to_string())?.child.kill();

@@ -1,4 +1,5 @@
 mod git_tools;
+pub mod links;
 mod mcp_config;
 pub mod orchestrator;
 mod settings;
@@ -22,6 +23,9 @@ pub fn run() {
             app.manage(preferences.clone());
             app.manage(workspace::WorkspaceDb::new(&app.handle()).map_err(std::io::Error::other)?);
             app.manage(terminal::TerminalState::new(&app.handle()));
+            let links = links::LinksDb::new(&app.handle()).map_err(std::io::Error::other)?;
+            links.start(app.handle().clone());
+            app.manage(links);
             let orchestrator = orchestrator::Orchestrator::new(&app.handle(), preferences)
                 .map_err(std::io::Error::other)?;
             orchestrator.start();
@@ -58,6 +62,10 @@ pub fn run() {
             workspace::project_open_vscode,
             workspace::mapping_layout_get,
             workspace::mapping_layout_save,
+            links::agent_links_list,
+            links::agent_link_create,
+            links::agent_link_delete,
+            links::agent_link_introduce,
             git_tools::git_snapshot,
             git_tools::git_file_diff,
             git_tools::git_stage,
