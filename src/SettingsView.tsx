@@ -5,6 +5,8 @@ import { useAppStore, type Preferences } from './store';
 import { DEFAULT_THEME, THEMES, applyTheme, loadTheme, type ThemeId } from './themes';
 import { ZOOM_LEVELS, applyZoom, loadZoom, stepZoom } from './zoom';
 import { Minus, Plus } from 'lucide-react';
+import { DEFAULT_MASCOT, MASCOT_COLORS, MASCOT_EYES, saveMascot, useMascot } from './mascot';
+import { MascotIcon } from './MascotIcon';
 
 export function SettingsView() {
   const { settingsOpen, setSettingsOpen, preferences, setPreferences, setNotice } = useAppStore();
@@ -12,6 +14,7 @@ export function SettingsView() {
   const [saving, setSaving] = useState(false);
   const [theme, setTheme] = useState<ThemeId>(loadTheme);
   const [zoom, setZoom] = useState(loadZoom);
+  const mascot = useMascot();
   // Ctrl +/−/0 can change the zoom while settings are open; keep the control in sync.
   useEffect(() => { const sync = (event: Event) => setZoom((event as CustomEvent<number>).detail); window.addEventListener('athenas-zoom', sync); return () => window.removeEventListener('athenas-zoom', sync); }, []);
   const changeZoom = (level: number) => { setZoom(level); void applyZoom(level).catch((error) => setNotice(`Não foi possível aplicar o zoom: ${error}`)); };
@@ -39,6 +42,25 @@ export function SettingsView() {
           <button type="button" className="button-quiet button-sm" aria-label="Aumentar zoom" disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]} onClick={() => changeZoom(stepZoom(zoom, 1))}><Plus size={13} /></button>
         </div><small>Aumenta textos, ícones e o terminal. Atalhos: <kbd>Ctrl +</kbd> <kbd>Ctrl −</kbd> <kbd>Ctrl 0</kbd></small></div>
         <div className="theme-picker"><span>Tema de cores</span><div className="theme-options">{THEMES.map((item) => <button type="button" key={item.id} className="theme-option" aria-pressed={theme === item.id} onClick={() => { setTheme(item.id); applyTheme(item.id); }}><span className="theme-swatch">{item.swatch.map((color) => <i key={color} style={{ background: color }} />)}</span>{item.name}{item.id === DEFAULT_THEME && <small>Padrão</small>}</button>)}</div></div>
+        <div className="mascot-picker"><span>Mascote do Claude</span>
+          <div className="mascot-editor">
+            <div className="mascot-preview"><MascotIcon config={mascot} size={56} /></div>
+            <div className="mascot-controls">
+              <div className="mascot-row"><small>Cor</small>
+                {MASCOT_COLORS.map((color) => <button type="button" key={color} className="mascot-swatch" aria-label={`Cor ${color}`} aria-pressed={mascot.color === color} style={{ background: color }} onClick={() => saveMascot({ ...mascot, color })} />)}
+                <input type="color" className="mascot-color-input" aria-label="Cor personalizada" value={mascot.color} onChange={(event) => saveMascot({ ...mascot, color: event.target.value })} />
+              </div>
+              <div className="mascot-row"><small>Olhos</small>
+                {MASCOT_EYES.map((item) => <button type="button" key={item.id} className="button-quiet button-sm mascot-chip" aria-pressed={mascot.eyes === item.id} onClick={() => saveMascot({ ...mascot, eyes: item.id })}>{item.label}</button>)}
+              </div>
+              <div className="mascot-row"><small>Extras</small>
+                <button type="button" className="button-quiet button-sm mascot-chip" aria-pressed={mascot.antennas} onClick={() => saveMascot({ ...mascot, antennas: !mascot.antennas })}>Antenas</button>
+                <button type="button" className="button-quiet button-sm mascot-chip" aria-pressed={mascot.blush} onClick={() => saveMascot({ ...mascot, blush: !mascot.blush })}>Bochechas</button>
+                <button type="button" className="button-quiet button-sm" onClick={() => saveMascot(DEFAULT_MASCOT)}>Restaurar</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <label className="settings-check"><input type="checkbox" checked={draft.reducedEffects} onChange={(event) => setDraft((current) => ({ ...current, reducedEffects: event.target.checked }))} /> Fundo ASCII na tela inicial</label></div>
       <div className="modal-footer"><span /><div><button type="button" className="button-quiet" onClick={() => setSettingsOpen(false)}>Cancelar</button><button className="button-primary" disabled={saving}>Salvar</button></div></div>
     </form>
