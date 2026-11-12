@@ -127,3 +127,9 @@ button:active:not(:disabled){transform:scale(.97)}
 .usage-agent.mid{color:var(--warning)}
 .usage-agent.high{color:var(--error)}
 .usage-ram{color:var(--fg-dim)}
+.usage-agent{border:0;background:transparent;padding:3px 0;cursor:pointer;font:inherit}
+.usage-agent:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.usage-modal{width:min(390px,calc(100vw - 32px));padding:22px}
+.usage-window{display:grid;gap:7px;padding:18px 0;border-top:1px solid var(--line);font-size:12px}
+.usage-window strong{font-size:20px;color:var(--fg)}
+.usage-window small,.usage-error{color:var(--fg-dim)}

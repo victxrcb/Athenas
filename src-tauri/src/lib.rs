@@ -4,6 +4,7 @@ pub mod orchestrator;
 mod settings;
 mod skills;
 mod terminal;
+mod usage;
 mod workspace;
 
 use tauri::Manager;
@@ -36,6 +37,7 @@ pub fn run() {
             terminal::terminal_delete,
             terminal::terminal_set_pane,
             terminal::group_metrics,
+            usage::agent_quotas,
             terminal::group_suspend,
             terminal::terminal_save_image,
             workspace::workspace_list,
