@@ -29,4 +29,4 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'Athenas Agent ${{ github.ref_name }}'
           releaseDraft: false
-          uploadUpdaterJson: true
+          includeUpdaterJson: true
