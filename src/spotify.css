@@ -13,3 +13,15 @@
 .spotify-controls button:disabled{opacity:.35}
 .spotify-controls .spotify-toggle{width:32px;height:32px;background:var(--fg);color:var(--bg-0)}
 .spotify-controls .spotify-toggle:hover:not(:disabled){background:#1db954;color:#07140c}
+/* Short windows (notebooks): one row, so the project list keeps its room. */
+@media (max-height:800px){
+.spotify-player{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px}
+.spotify-track{flex:1}
+.spotify-art{width:28px;height:28px}
+.spotify-art svg{width:18px;height:18px}
+.spotify-info small{display:none}
+.spotify-controls{margin-top:0;gap:2px}
+.spotify-controls button{width:24px;height:24px}
+.spotify-controls .spotify-toggle{width:28px;height:28px}
+.spotify-error{order:3;flex-basis:100%;margin-top:0}
+}

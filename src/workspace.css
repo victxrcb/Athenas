@@ -47,13 +47,18 @@
 .panel-history button:hover { background: var(--surface-3); color: var(--text); }
 
 /* ============ Terminal ============ */
-.terminal-view { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface-0); animation: fade-in var(--dur) var(--ease); }
+.terminal-view { container: terminal / inline-size; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface-0); animation: fade-in var(--dur) var(--ease); }
 .terminal-toolbar { height: 40px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: 0 var(--sp-2) 0 var(--sp-4); border-bottom: 1px solid var(--border); }
-.terminal-title { min-width: 0; display: flex; align-items: center; gap: 8px; }
-.terminal-title strong { flex: none; font-size: var(--fs-sm); font-weight: 600; }
+.terminal-title { min-width: 0; display: flex; align-items: center; gap: 8px; overflow: hidden; }
+.terminal-title strong { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-weight: 600; }
+.terminal-title > svg, .terminal-title > img { flex: none; }
 .terminal-title span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-2xs) var(--font-mono); color: var(--text-muted); }
 .terminal-tools { flex: none; display: flex; align-items: center; gap: 4px; }
 .terminal-tools .status-badge { margin-right: 6px; }
+/* Narrow panes (split layouts on notebooks): drop the path, then shortcuts, then button labels. */
+@container terminal (max-width: 560px) { .terminal-title span, .terminal-tools kbd { display: none; } }
+@container terminal (max-width: 420px) { .terminal-tools .tool-label { display: none; } .terminal-toolbar { padding-left: var(--sp-3); } .terminal-search input { width: 100%; } }
+@container terminal (max-width: 300px) { .terminal-tools .status-badge { display: none; } }
 .terminal-search { display: flex; gap: 6px; padding: 6px var(--sp-4); border-bottom: 1px solid var(--border); animation: drop-in var(--dur-fast) var(--ease-out); }
 .terminal-search input { width: 260px; height: 28px; font-size: var(--fs-xs); }
 /* Fixed black canvas around xterm so the padding matches the terminal in every theme. */

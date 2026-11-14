@@ -1,5 +1,6 @@
 /* ============ Tool pages (Git, MCP, Skills, Orchestration) ============ */
-.tools-content { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-6) var(--sp-8) var(--sp-8); animation: fade-in var(--dur) var(--ease); }
+/* Content is capped at 1480px on wide monitors; the side padding grows so the scrollbar stays at the edge. */
+.tools-content { container: tools / inline-size; flex: 1; min-height: 0; overflow: auto; padding: var(--sp-6) max(var(--sp-8), calc((100% - 1480px) / 2)) var(--sp-8); animation: fade-in var(--dur) var(--ease); }
 .tools-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-6); margin-bottom: var(--sp-5); padding-bottom: var(--sp-5); border-bottom: 1px solid var(--border); }
 .tools-heading h1 { margin: 4px 0 4px; font-size: var(--fs-2xl); font-weight: 600; letter-spacing: -.02em; }
 .tools-heading p { margin: 0; font-size: var(--fs-sm); color: var(--text-dim); }
@@ -105,4 +106,23 @@
 .git-pr-arrow { padding-bottom: calc(var(--sp-3) + 8px); color: var(--text-muted); }
 .git-check { display: flex; align-items: center; gap: 8px; margin-bottom: var(--sp-3); font-size: var(--fs-sm); color: var(--text-dim); }
 .git-check code { font-size: var(--fs-xs); }
-@media (max-width: 900px) { .git-pr-layout { grid-template-columns: 1fr; } }
+/* Layout follows the content width (sidebar, zoom and Windows scaling all shrink it), not the screen. */
+@container tools (max-width: 980px) {
+  .git-pr-layout { grid-template-columns: 1fr; }
+}
+@container tools (max-width: 720px) {
+  .tools-columns { grid-template-columns: minmax(0, 1fr); }
+  .tools-heading { flex-wrap: wrap; align-items: flex-start; }
+  .git-tabs { width: 100%; }
+  .git-tabs button { flex: 1; padding: 0 6px; }
+  .remote-branch { grid-template-columns: minmax(0, 1fr) auto; }
+  .remote-branch > button { grid-column: 1 / -1; justify-self: start; }
+  .pull-row { grid-template-columns: auto minmax(0, 1fr); }
+  .pull-tags { grid-column: 2; }
+}
+@container tools (max-width: 460px) {
+  .git-pr-branches { grid-template-columns: minmax(0, 1fr); }
+  .git-pr-arrow { display: none; }
+  .git-panel-head { align-items: flex-start; }
+  .git-filter input { width: 100px; }
+}

@@ -118,6 +118,10 @@
 .home-footer button { border: 0; background: transparent; color: var(--text-dim); font-size: var(--fs-xs); }
 .home-footer button:hover { color: var(--text); }
 
+/* Big monitors: let the dashboard breathe instead of sitting in a narrow column. */
+@media (min-width: 1800px) {
+  .home-content { max-width: 1280px; }
+}
 @media (max-width: 1240px) {
   .home-sections { grid-template-columns: 1fr; }
   .hero-art { width: 72%; --hero-opacity: .22; }
