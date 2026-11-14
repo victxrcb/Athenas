@@ -102,54 +102,117 @@
     document.querySelectorAll('[data-theme-name]').forEach(function (el) { el.textContent = themeLabel(el.dataset.themeName); });
     document.querySelectorAll('[data-outfit]').forEach(function (el) { el.textContent = outfitLabel(el.dataset.outfit); });
     renderRelease();
+    syncThumbs();
+  }
+
+  /** Troca de idioma pelo botão: o indicador desliza na hora e os textos esmaecem e voltam já traduzidos. */
+  function switchLang(next) {
+    if (next === lang) return;
+    document.querySelectorAll('[data-lang]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.lang === next)); });
+    syncThumbs();
+    store.set('athenas-site-lang', next);
+    setVideo(next);
+    if (reduceMotion) { applyLang(next); return; }
+    root.classList.add('i18n-out');
+    setTimeout(function () {
+      applyLang(next);
+      requestAnimationFrame(function () { root.classList.remove('i18n-out'); });
+    }, 170);
+  }
+
+  // ---------- Controles segmentados: indicador que desliza até a opção ativa ----------
+  function syncThumb(group) {
+    var thumb = group.querySelector('.seg-thumb');
+    var active = group.querySelector('button[aria-pressed="true"]');
+    if (!thumb || !active) return;
+    group.style.setProperty('--x', active.offsetLeft + 'px');
+    group.style.setProperty('--w', active.offsetWidth + 'px');
+  }
+  function syncThumbs() { document.querySelectorAll('.segmented.has-thumb').forEach(syncThumb); }
+  function setupThumbs() {
+    document.querySelectorAll('.segmented').forEach(function (group) {
+      var thumb = document.createElement('span');
+      thumb.className = 'seg-thumb';
+      thumb.setAttribute('aria-hidden', 'true');
+      group.prepend(thumb);
+      group.classList.add('has-thumb');
+      syncThumb(group);
+    });
+    // Só anima depois da primeira medição, para não deslizar ao carregar a página.
+    requestAnimationFrame(function () { requestAnimationFrame(function () {
+      document.querySelectorAll('.segmented.has-thumb').forEach(function (group) { group.classList.add('ready'); });
+    }); });
+    window.addEventListener('resize', syncThumbs);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncThumbs);
   }
 
   // ---------- Vídeo ----------
   var video = document.getElementById('promo');
-  function setVideo(next) {
+  var videoCard = video && video.closest('.video-card');
+  function setVideo(next, immediate) {
     if (!video) return;
     document.querySelectorAll('[data-video]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.video === next)); });
+    syncThumbs();
     var src = 'assets/video/athenas-' + next + '.mp4';
     if (video.getAttribute('src') === src) return;
     var time = video.currentTime;
     var playing = !video.paused && !video.ended;
-    video.poster = 'assets/video/poster-' + next + '.webp';
-    video.src = src;
-    if (time > 0) {
-      video.addEventListener('loadedmetadata', function restore() {
-        video.removeEventListener('loadedmetadata', restore);
-        video.currentTime = Math.min(time, video.duration || time);
-        if (playing) video.play().catch(function () { /* o navegador pode bloquear autoplay */ });
-      });
-      video.load();
-    }
+    var swap = function () {
+      video.poster = 'assets/video/poster-' + next + '.webp';
+      video.src = src;
+      if (time > 0) {
+        video.addEventListener('loadedmetadata', function restore() {
+          video.removeEventListener('loadedmetadata', restore);
+          video.currentTime = Math.min(time, video.duration || time);
+          if (playing) video.play().catch(function () { /* o navegador pode bloquear autoplay */ });
+        });
+        video.load();
+      }
+      if (videoCard) requestAnimationFrame(function () { videoCard.classList.remove('switching'); });
+    };
+    if (immediate || reduceMotion || !videoCard) { swap(); return; }
+    videoCard.classList.add('switching');
+    setTimeout(swap, 180);
+  }
+  if (video && videoCard) {
+    video.addEventListener('play', function () { videoCard.classList.add('playing'); });
+    video.addEventListener('pause', function () { videoCard.classList.remove('playing'); });
+    video.addEventListener('ended', function () { videoCard.classList.remove('playing'); });
   }
 
   // ---------- Temas ----------
   function themeLabel(id) { var item = THEMES.find(function (x) { return x[0] === id; }); return item ? item[lang === 'en' ? 2 : 1] : id; }
   function outfitLabel(id) { var item = OUTFITS.find(function (x) { return x[0] === id; }); return item ? item[lang === 'en' ? 2 : 1] : id; }
+  function themeShot(id) { return 'assets/screens/theme-home-' + id + '.webp'; }
 
-  function applyTheme(id, persist) {
+  function setThemeState(id) {
     root.dataset.theme = id;
     document.querySelectorAll('.theme-chip').forEach(function (chip) { chip.setAttribute('aria-pressed', String(chip.dataset.theme === id)); });
-    var shot = document.getElementById('theme-shot');
     var meta = document.querySelector('meta[name="theme-color"]');
     var theme = THEMES.find(function (x) { return x[0] === id; });
     if (meta && theme) meta.content = theme[3][0];
-    if (shot) {
-      var next = 'assets/screens/theme-home-' + id + '.webp';
-      if (shot.getAttribute('src') !== next) {
-        if (reduceMotion) shot.src = next;
-        else {
-          shot.style.opacity = '0.35';
-          var img = new Image();
-          img.onload = img.onerror = function () { shot.src = next; shot.style.opacity = ''; };
-          img.src = next;
-        }
-      }
-    }
-    if (persist) store.set('athenas-site-theme', id);
+    var shot = document.getElementById('theme-shot');
+    if (shot && shot.getAttribute('src') !== themeShot(id)) shot.src = themeShot(id);
   }
+
+  /** Aplica o tema; com `origin` (clique), revela o novo tema num círculo que cresce a partir daquele ponto. */
+  function applyTheme(id, persist, origin) {
+    if (persist) store.set('athenas-site-theme', id);
+    if (!origin || reduceMotion || !document.startViewTransition) { setThemeState(id); return; }
+    var img = new Image();
+    img.src = themeShot(id);
+    var decoded = img.decode ? img.decode().catch(function () {}) : Promise.resolve();
+    var timeout = new Promise(function (resolve) { setTimeout(resolve, 450); });
+    Promise.race([decoded, timeout]).then(function () {
+      root.style.setProperty('--vt-x', origin.x + 'px');
+      root.style.setProperty('--vt-y', origin.y + 'px');
+      root.dataset.vt = 'theme';
+      var transition = document.startViewTransition(function () { setThemeState(id); });
+      transition.finished.finally(function () { delete root.dataset.vt; });
+    });
+  }
+
+  function preloadTheme(id) { var img = new Image(); img.src = themeShot(id); }
 
   function buildThemes() {
     var box = document.querySelector('.themes');
@@ -166,7 +229,12 @@
       label.dataset.themeName = item[0];
       label.textContent = themeLabel(item[0]);
       button.append(swatch, label);
-      button.addEventListener('click', function () { applyTheme(item[0], true); });
+      button.addEventListener('pointerenter', function () { preloadTheme(item[0]); });
+      button.addEventListener('click', function (event) {
+        var box = button.getBoundingClientRect();
+        var keyboard = event.detail === 0;
+        applyTheme(item[0], true, { x: keyboard ? box.left + box.width / 2 : event.clientX, y: keyboard ? box.top + box.height / 2 : event.clientY });
+      });
       box.appendChild(button);
     });
     var mascots = document.querySelector('.mascots');
@@ -235,8 +303,27 @@
     }, 2200);
   }
 
+  /** Destaca na nav a seção que está na tela. */
+  function trackSection() {
+    var links = Array.prototype.slice.call(document.querySelectorAll('.nav-links a'));
+    if (!links.length || !('IntersectionObserver' in window)) return;
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        links.forEach(function (a) { a.classList.toggle('current', a.getAttribute('href') === '#' + entry.target.id); });
+      });
+    }, { rootMargin: '-45% 0px -50% 0px' });
+    links.forEach(function (a) { var section = document.querySelector(a.getAttribute('href')); if (section) observer.observe(section); });
+  }
+
   function reveal() {
     var items = document.querySelectorAll('.reveal');
+    // Itens irmãos entram em cascata.
+    items.forEach(function (el) {
+      var siblings = Array.prototype.filter.call(el.parentElement.children, function (x) { return x.classList.contains('reveal'); });
+      var index = siblings.indexOf(el);
+      if (siblings.length > 1 && !el.classList.contains('feature')) el.style.setProperty('--delay', (index * 0.09) + 's');
+    });
     if (reduceMotion || !('IntersectionObserver' in window)) { items.forEach(function (el) { el.classList.add('in'); }); return; }
     var observer = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) { if (entry.isIntersecting) { entry.target.classList.add('in'); observer.unobserve(entry.target); } });
@@ -260,14 +347,10 @@
   buildThemes();
   applyTheme(root.dataset.theme || 'preto-branco', false);
   if (lang === 'en') applyLang('en');
-  setVideo(lang);
+  setVideo(lang, true);
+  setupThumbs();
   document.querySelectorAll('[data-lang]').forEach(function (button) {
-    button.addEventListener('click', function () {
-      var next = button.dataset.lang;
-      applyLang(next);
-      setVideo(next);
-      store.set('athenas-site-lang', next);
-    });
+    button.addEventListener('click', function () { switchLang(button.dataset.lang); });
   });
   document.querySelectorAll('[data-video]').forEach(function (button) {
     button.addEventListener('click', function () { setVideo(button.dataset.video); });
@@ -276,4 +359,5 @@
   liveCounters();
   reveal();
   lightbox();
+  trackSection();
 })();

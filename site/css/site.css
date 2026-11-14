@@ -19,6 +19,8 @@
   --radius: 14px;
   --gutter: clamp(16px, 4vw, 40px);
   --max: 1180px;
+  --spring: cubic-bezier(.34, 1.4, .64, 1);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -57,27 +59,50 @@ body::before {
 
 /* Botões */
 .button {
+  position: relative; overflow: hidden; isolation: isolate;
   display: inline-flex; align-items: center; justify-content: center; gap: 10px;
   min-height: 46px; padding: 0 20px; border-radius: 10px;
   font: 600 15px/1 var(--font-ui); text-decoration: none; cursor: pointer;
   border: 1px solid var(--line-strong); background: var(--bg-1); color: var(--fg);
-  transition: background-color .2s, border-color .2s, transform .2s;
+  transition: background-color .25s, border-color .25s, color .25s, transform .3s var(--spring), box-shadow .3s ease;
 }
-.button:hover { border-color: var(--fg-faint); background: var(--bg-2); }
-.button:active { transform: translateY(1px); }
+.button svg { transition: transform .35s var(--spring); }
+.button:hover { border-color: var(--fg-faint); background: var(--bg-2); transform: translateY(-2px); box-shadow: 0 12px 28px -14px rgba(0, 0, 0, .7), 0 0 0 1px color-mix(in srgb, var(--fg) 6%, transparent); }
+.button:active { transform: translateY(0) scale(.97); transition-duration: .08s; }
 .button-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
-.button-primary:hover { background: var(--blood-hover); border-color: var(--blood-hover); }
+.button-primary:hover { background: var(--blood-hover); border-color: var(--blood-hover); box-shadow: 0 14px 34px -12px color-mix(in srgb, var(--accent) 65%, transparent); }
+/* Brilho que atravessa o botão principal no hover. */
+.button-primary::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(105deg, transparent 30%, color-mix(in srgb, var(--accent-fg) 22%, transparent) 50%, transparent 70%);
+  translate: -110% 0; transition: translate .7s ease;
+}
+.button-primary:hover::after { translate: 110% 0; }
+.download-exe:hover svg { transform: translateY(2px) scale(1.08); }
+a[href="#video"].button:hover svg { transform: translateX(3px) scale(1.15); }
 .button-sm { min-height: 36px; padding: 0 14px; font-size: 14px; }
 .button-lg { min-height: 56px; padding: 0 26px; font-size: 16px; }
 .button small { font-weight: 500; opacity: .7; font-size: 12px; }
 
-.segmented { display: inline-flex; padding: 3px; gap: 2px; border-radius: 9px; background: var(--bg-1); border: 1px solid var(--line); }
+/* Controle segmentado com indicador deslizante (o indicador é criado pelo JS). */
+.segmented { position: relative; isolation: isolate; display: inline-flex; padding: 3px; gap: 2px; border-radius: 9px; background: var(--bg-1); border: 1px solid var(--line); transition: border-color .25s; }
+.segmented:hover { border-color: var(--line-strong); }
 .segmented button {
-  border: 0; background: transparent; color: var(--fg-dim); cursor: pointer;
+  position: relative; border: 0; background: transparent; color: var(--fg-dim); cursor: pointer;
   font: 600 13px/1 var(--font-ui); padding: 8px 12px; border-radius: 7px;
+  transition: color .25s ease, transform .2s var(--spring);
 }
 .segmented button[aria-pressed="true"] { background: var(--bg-3); color: var(--fg); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .segmented button:hover { color: var(--fg); }
+.segmented button:active { transform: scale(.93); }
+.seg-thumb {
+  position: absolute; z-index: -1; top: 3px; bottom: 3px; left: 0; width: var(--w, 0); border-radius: 7px;
+  background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--line-strong), 0 4px 12px -4px rgba(0, 0, 0, .55);
+  translate: var(--x, 0) 0; opacity: 0;
+}
+.segmented.has-thumb .seg-thumb { opacity: 1; }
+.segmented.has-thumb.ready .seg-thumb { transition: translate .45s var(--spring), width .45s var(--spring), background-color .25s; }
+.segmented.has-thumb button[aria-pressed="true"] { background: transparent; box-shadow: none; }
 
 /* Navegação */
 .nav { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(14px); background: color-mix(in srgb, var(--bg-0) 78%, transparent); border-bottom: 1px solid var(--line); }
@@ -210,15 +235,117 @@ body::before {
 .lightbox img { max-height: 92vh; width: auto; border-radius: 12px; border: 1px solid var(--line-strong); }
 .lightbox-close { position: fixed; top: 16px; right: 16px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--bg-1); color: var(--fg); font-size: 26px; line-height: 1; cursor: pointer; }
 
+/* ---------- Interações ---------- */
+
+/* Links da nav: sublinhado que cresce do centro. */
+.nav-links a { position: relative; transition: color .25s, background-color .25s; }
+.nav-links a::after {
+  content: ''; position: absolute; left: 12px; right: 12px; bottom: 3px; height: 1.5px; border-radius: 2px;
+  background: var(--gold); scale: 0 1; transition: scale .35s var(--ease-out);
+}
+.nav-links a:hover::after, .nav-links a.current::after { scale: 1 1; }
+.nav-links a.current { color: var(--fg); }
+
+.icon-link { transition: color .25s, border-color .25s, transform .35s var(--spring), background-color .25s; }
+.icon-link:hover { transform: rotate(-8deg) scale(1.08); background: var(--bg-2); }
+.brand img { transition: transform .6s var(--spring); }
+.brand:hover img { transform: rotate(-14deg) scale(1.06); }
+.footer-meta a, .release-meta a { text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px; transition: color .2s, text-decoration-color .2s; }
+.footer-meta a:hover, .release-meta a:hover { color: var(--fg); text-decoration-color: var(--gold); }
+
+/* Selos dos agentes: elevam e o mascote dá um pulinho. */
+.agents li { transition: transform .3s var(--spring), border-color .25s, background-color .25s; }
+.agents li:hover { transform: translateY(-3px); border-color: var(--line-strong); background: var(--bg-2); }
+.agents li:hover .mascot { animation: hop .5s var(--spring); }
+.agents li:hover img { animation: spin-in .6s var(--ease-out); }
+.agents li:hover .prompt { animation: blink .9s steps(1) 2; }
+@keyframes hop { 40% { translate: 0 -5px; } 100% { translate: 0 0; } }
+@keyframes spin-in { from { rotate: -90deg; scale: .7; } to { rotate: 0deg; scale: 1; } }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Prints: elevam, ganham brilho e aproximam levemente. */
+.window { transition: transform .45s var(--ease-out), box-shadow .45s ease, border-color .3s; }
+.window img { transition: transform .7s var(--ease-out); }
+.shot:hover, .hero-shot:hover { transform: translateY(-6px); border-color: color-mix(in srgb, var(--gold) 45%, var(--line-strong)); box-shadow: 0 40px 90px rgba(0, 0, 0, .5), 0 0 0 1px rgba(0, 0, 0, .3), 0 0 90px var(--glow); }
+.shot:hover img { transform: scale(1.025); }
+
+/* Funcionalidades: o ícone acende quando o bloco está em foco. */
+.glyph { transition: background-color .3s, color .3s, border-color .3s, transform .45s var(--spring); }
+.feature:hover .glyph { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong)); transform: rotate(-6deg) scale(1.08); }
+.checks li { transition: translate .3s var(--ease-out); }
+.checks li:hover { translate: 4px 0; }
+
+/* Passos da orquestração. */
+.steps li { transition: transform .35s var(--spring), border-color .3s, background-color .3s; }
+.steps li:hover { transform: translateY(-4px); border-color: color-mix(in srgb, var(--gold) 50%, var(--line)); background: var(--bg-2); }
+.steps span { display: inline-block; transition: transform .35s var(--spring); }
+.steps li:hover span { transform: translateX(4px); }
+
+/* Chips de tema. */
+.theme-chip { transition: transform .3s var(--spring), color .25s, border-color .25s, box-shadow .3s, background-color .25s; }
+.theme-chip:hover { transform: translateY(-2px); background: var(--bg-2); }
+.theme-chip:active { transform: scale(.95); transition-duration: .08s; }
+.swatch { transition: transform .5s var(--spring); }
+.theme-chip:hover .swatch { transform: rotate(-20deg) scale(1.12); }
+.theme-chip[aria-pressed="true"] .swatch { animation: pop .45s var(--spring); }
+@keyframes pop { 0% { scale: .6; } 100% { scale: 1; } }
+
+/* Cards de personalização e mascotes. */
+.custom-card { transition: border-color .3s, transform .4s var(--ease-out); }
+.custom-card:hover { border-color: var(--line-strong); }
+.mascots figure { transition: transform .35s var(--spring), border-color .25s, box-shadow .3s; }
+.mascots figure:hover { transform: translateY(-3px) scale(1.04); border-color: var(--gold); box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .6); }
+.mascots figure:hover figcaption { color: var(--fg); }
+
+/* Vídeo: moldura acende enquanto toca; troca de idioma esmaece o quadro. */
+.video-card { transition: box-shadow .5s ease, border-color .4s; }
+.video-card.playing { border-color: color-mix(in srgb, var(--gold) 45%, var(--line-strong)); box-shadow: 0 30px 80px rgba(0, 0, 0, .55), 0 0 110px var(--glow); }
+.video-card video { transition: opacity .3s ease; }
+.video-card.switching video { opacity: .25; }
+
+/* Card de download. */
+.download-card { transition: border-color .4s; }
+.download-card:hover { border-color: color-mix(in srgb, var(--gold) 35%, var(--line-strong)); }
+
+/* Lightbox abre com zoom. */
+.lightbox[open] { animation: zoom-in .35s var(--ease-out); }
+.lightbox[open]::backdrop { animation: fade-in .3s ease; }
+@keyframes zoom-in { from { opacity: 0; scale: .94; } to { opacity: 1; scale: 1; } }
+@keyframes fade-in { from { opacity: 0; } }
+
+/* Entrada do hero, em cascata. */
+.js .hero-copy > *, .js .hero .status-line { animation: rise .9s var(--ease-out) backwards; }
+.js .hero-copy > :nth-child(2) { animation-delay: .08s; }
+.js .hero-copy > :nth-child(3) { animation-delay: .16s; }
+.js .hero-copy > :nth-child(4) { animation-delay: .24s; }
+.js .hero-copy > :nth-child(5) { animation-delay: .3s; }
+.js .hero-copy > :nth-child(6) { animation-delay: .36s; }
+.js .hero .status-line { animation-delay: .42s; }
+.js .hero-shot { animation: rise-shot 1.1s var(--ease-out) .48s backwards; }
+@keyframes rise { from { opacity: 0; translate: 0 18px; } to { opacity: 1; translate: 0 0; } }
+@keyframes rise-shot { from { opacity: 0; translate: 0 40px; scale: .97; } to { opacity: 1; translate: 0 0; scale: 1; } }
+
+/* Troca de tema: revelação circular a partir do chip clicado (View Transitions). */
+html[data-vt="theme"]::view-transition-old(root),
+html[data-vt="theme"]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html[data-vt="theme"]::view-transition-new(root) { animation: reveal .75s cubic-bezier(.65, 0, .35, 1); }
+@keyframes reveal { from { clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 50%)); } to { clip-path: circle(150vmax at var(--vt-x, 50%) var(--vt-y, 50%)); } }
+html[data-vt] *, html[data-vt] *::before, html[data-vt] *::after { transition: none !important; }
+/* Troca de idioma: os textos esmaecem e voltam traduzidos, enquanto o indicador desliza. */
+.js [data-i18n], .js [data-i18n-html] { transition: opacity .17s ease, color .25s, background-color .25s; }
+.i18n-out [data-i18n], .i18n-out [data-i18n-html] { opacity: 0; }
+
 /* Entrada suave (só com JS e sem preferência por movimento reduzido). */
-.js .reveal { opacity: 0; translate: 0 22px; transition: opacity .7s ease, translate .7s cubic-bezier(.16, 1, .3, 1); }
+.js .reveal { opacity: 0; translate: 0 28px; transition: opacity .8s ease, translate .9s var(--ease-out), transform .45s var(--ease-out), box-shadow .45s ease, border-color .3s; }
+.js .reveal.in { transition-delay: var(--delay, 0s), var(--delay, 0s), 0s, 0s, 0s; }
 .js .reveal.in { opacity: 1; translate: 0 0; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .js .reveal { opacity: 1; translate: none; transition: none; }
-  .dot.live { animation: none; }
-  body, .theme-shot img { transition: none; }
+  *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; transition-delay: 0s !important; }
+  .js .reveal { opacity: 1; translate: none; }
+  .button:hover, .shot:hover, .hero-shot:hover, .theme-chip:hover, .agents li:hover, .steps li:hover, .mascots figure:hover, .icon-link:hover, .feature:hover .glyph { transform: none; }
+  .shot:hover img { transform: none; }
 }
 
 @media (max-width: 1000px) {
