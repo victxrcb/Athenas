@@ -307,3 +307,10 @@ input[type="checkbox"]:checked::after { content: ""; width: 8px; height: 4px; bo
 .zoom-steps button { flex: 1; height: 24px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-dim); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease); }
 .zoom-steps button:hover { color: var(--text); }
 .zoom-steps button.active { background: var(--surface-3); color: var(--text); font-weight: 600; box-shadow: var(--shadow-sm); }
+
+/* Repository field (project forms) */
+.field-optional { margin-left: 4px; font-weight: 400; color: var(--text-muted); }
+.field-hint { display: block; margin-top: 5px; font-size: var(--fs-2xs); color: var(--text-muted); }
+.field-hint.error { color: color-mix(in srgb, var(--error) 75%, var(--text)); }
+.repo-origin { margin-top: 6px; max-width: 100%; overflow: hidden; }
+.repo-origin code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-2xs); }

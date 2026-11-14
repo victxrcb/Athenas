@@ -13,6 +13,7 @@ import { Sidebar } from './Sidebar';
 import { toggleSidebarHidden, useSidebarPrefs } from './sidebarPrefs';
 import { Home } from './Home';
 import { chooseFolder } from './folder';
+import { RepoField } from './RepoField';
 import { StatusDot, sessionStatus } from './status';
 import { useWorkerSummaryPolling } from './useWorkerSummary';
 import { useEffect, useRef, useState } from 'react';
@@ -119,15 +120,16 @@ function SmallModal({ kind }: { kind: 'project' | 'group' }) {
   const [name, setName] = useState('');
   const [folder, setFolder] = useState('');
   const [groupId, setGroupId] = useState('');
+  const [repoUrl, setRepoUrl] = useState('');
   if (!openModal) return null;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!isTauri()) { state.setNotice('Crie espaços no aplicativo desktop.'); return; }
     try {
-      const workspace = await invoke<WorkspaceSnapshot>(kind === 'project' ? 'project_create' : 'group_create', kind === 'project' ? { name, folder: folder || null, groupId: groupId || null } : { name });
+      const workspace = await invoke<WorkspaceSnapshot>(kind === 'project' ? 'project_create' : 'group_create', kind === 'project' ? { name, folder: folder || null, groupId: groupId || null, repoUrl: repoUrl.trim() || null } : { name });
       state.setWorkspace(workspace);
       if (kind === 'project') state.setActiveProjectId(workspace.projects[0]?.id ?? null);
-      close(); setName(''); setFolder(''); setGroupId('');
+      close(); setName(''); setFolder(''); setGroupId(''); setRepoUrl('');
     } catch (error) { state.setNotice(String(error)); }
   };
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
@@ -138,6 +140,7 @@ function SmallModal({ kind }: { kind: 'project' | 'group' }) {
       {kind === 'project' && <>
         <div className="form-field"><span>Grupo</span><Select label="Grupo" value={groupId} onChange={setGroupId} options={[{ value: "", label: "Sem grupo" }, ...state.workspace.groups.map((group) => ({ value: group.id, label: group.name }))]} /></div>
         <label className="form-field"><span>Pasta</span><div className="folder-row"><input value={folder} onChange={(event) => setFolder(event.target.value)} placeholder={'C:\\caminho\\do\\projeto'} required /><button type="button" className="button-quiet" onClick={async () => { const selected = await chooseFolder(); if (selected) setFolder(selected); }}>Escolher pasta</button></div></label>
+        <RepoField value={repoUrl} onChange={setRepoUrl} folder={folder} />
       </>}
       <div className="modal-footer"><span /><div><button type="button" className="button-quiet" onClick={close}>Cancelar</button><button className="button-primary">Criar</button></div></div>
     </form>

@@ -1,13 +1,38 @@
 import { useEffect, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { FolderOpen, GitBranch, RefreshCw, Save } from 'lucide-react';
+import { ExternalLink, FolderOpen, GitBranch, GitCommitHorizontal, GitPullRequest, RefreshCw, Save } from 'lucide-react';
+import { BranchesPanel, PullRequestsPanel, openUrl, providerName, useRemoteBranches, type RepoInfo } from './GitRemote';
 import { useAppStore } from './store';
 
 type GitSnapshot = { branch: string; status: string; branches: string[]; worktrees: string };
 type McpConfig = { id: string; agent: string; path: string; text: string; servers: string[] };
 type Skill = { name: string; description: string; path: string; agent: string };
 
-function GitView({ folder }: { folder: string | null }) {
+type GitTab = 'changes' | 'branches' | 'pulls';
+
+function GitView({ folder, repoUrl }: { folder: string | null; repoUrl: string | null }) {
+  const [tab, setTab] = useState<GitTab>('changes');
+  const [prHead, setPrHead] = useState<string | null>(null);
+  const [prCount, setPrCount] = useState<number | null>(null);
+  const [origin, setOrigin] = useState<string | null>(null);
+  const [repo, setRepo] = useState<RepoInfo | null>(null);
+  const [repoError, setRepoError] = useState<string | null>(null);
+  const url = repoUrl || origin;
+  useEffect(() => {
+    setOrigin(null);
+    if (!folder || repoUrl || !isTauri()) return;
+    let alive = true;
+    void invoke<string | null>('git_origin_url', { folder }).then((value) => { if (alive) setOrigin(value); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [folder, repoUrl]);
+  useEffect(() => {
+    setRepo(null); setRepoError(null); setPrCount(null); setPrHead(null);
+    if (!url || !isTauri()) return;
+    let alive = true;
+    void invoke<RepoInfo>('git_repo_info', { url }).then((info) => { if (alive) setRepo(info); }).catch((reason) => { if (alive) setRepoError(String(reason)); });
+    return () => { alive = false; };
+  }, [url]);
+  const remote = useRemoteBranches(folder, repo ? url : null);
   const [data, setData] = useState<GitSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<string | null>(null);
@@ -25,7 +50,21 @@ function GitView({ folder }: { folder: string | null }) {
   const files = data?.status.split('\n').filter(Boolean).map((line) => ({ code: line.slice(0, 2), path: line.slice(3) })) ?? [];
   const action = async (task: () => Promise<unknown>) => { try { await task(); await refresh(); setError(null); } catch (reason) { setError(String(reason)); } };
   const diffRows = diff.split('\n').map((line) => ({ left: line.startsWith('+') && !line.startsWith('+++') ? '' : line, right: line.startsWith('-') && !line.startsWith('---') ? '' : line }));
-  return <div className="tools-content"><div className="tools-heading"><div><span className="section-kicker">Controle de versão</span><h1>Git</h1><p>{folder}</p></div><button onClick={() => void refresh()}><RefreshCw size={15} /> Atualizar</button></div>{error && <p className="tools-error" role="alert">{error}</p>}{data && <><div className="git-meta"><GitBranch size={15} /> {data.branch || 'HEAD destacado'} <span>· {files.length} arquivo(s) alterado(s)</span></div><div className="tools-columns"><section><h2>Arquivos</h2>{files.length ? files.map((item) => <div className="git-file" key={item.path}><button onClick={async () => { setFile(item.path); try { setDiff(await invoke<string>('git_file_diff', { folder, file: item.path, staged: item.code[0] !== ' ' })); } catch (reason) { setError(String(reason)); } }}><code>{item.code}</code>{item.path}</button><button aria-label={`${item.code[0] === ' ' || item.code === '??' ? 'Stage' : 'Unstage'} ${item.path}`} onClick={() => void action(() => invoke('git_stage', { folder, file: item.path, stage: item.code[0] === ' ' || item.code === '??' }))}>{item.code[0] === ' ' || item.code === '??' ? '+' : '−'}</button></div>) : <p>Nenhuma alteração.</p>}<div className="git-commit"><input aria-label="Mensagem de commit" placeholder="Mensagem do commit" value={message} onChange={(event) => setMessage(event.target.value)} /><button onClick={() => void action(async () => { await invoke('git_commit', { folder, message }); setMessage(''); })}>Commit</button></div></section><section><h2>Diff {file && <small>· {file}</small>}</h2>{file ? <div className="diff-view">{diffRows.map((row, index) => <div className="diff-row" key={index}><code className={row.left.startsWith('-') ? 'removed' : ''}>{row.left}</code><code className={row.right.startsWith('+') ? 'added' : ''}>{row.right}</code></div>)}</div> : <p>Selecione um arquivo.</p>}</section></div><div className="tools-columns lower"><section><h2>Branches</h2>{data.branches.map((name) => <div className="git-list-row" key={name}>{name}</div>)}</section><section><h2>Worktrees</h2><pre>{data.worktrees || 'Nenhum worktree.'}</pre><div className="git-commit"><input aria-label="Nova branch de worktree" placeholder="Nome da nova branch" value={branch} onChange={(event) => setBranch(event.target.value)} /><button onClick={() => void action(async () => { await invoke('git_create_worktree', { folder, branch }); setBranch(''); })}>Criar worktree</button></div></section></div></>}</div>;
+  const repoLine = repo
+    ? <p className="git-repo-line">{providerName(repo.provider)} · <button type="button" className="link-button" onClick={() => void openUrl(repo.webUrl).catch((reason) => setError(String(reason)))}>{repo.slug} <ExternalLink size={11} /></button>{!repoUrl && <small> · usando o origin da pasta</small>}</p>
+    : repoError ? <p className="git-repo-line">Link do repositório inválido: {repoError}</p>
+    : <p className="git-repo-line">Sem repositório remoto. Adicione o link em <em>Editar projeto</em>.</p>;
+  const remoteNeeded = <div className="tools-empty inline">Adicione o link do repositório em <em>Editar projeto</em> (ou um remoto <code>origin</code> na pasta) para acompanhar branches e pull requests.</div>;
+  return <div className="tools-content"><div className="tools-heading"><div><span className="section-kicker">Controle de versão</span><h1>Git</h1><p>{folder}</p>{repoLine}</div><button onClick={() => { void refresh(); if (tab === 'branches') void remote.reload(); }}><RefreshCw size={15} /> Atualizar</button></div>
+    {error && <p className="tools-error" role="alert">{error}</p>}
+    <div className="segmented git-tabs" role="tablist" aria-label="Seções do Git">
+      <button type="button" role="tab" aria-selected={tab === 'changes'} className={tab === 'changes' ? 'active' : ''} onClick={() => setTab('changes')}><GitCommitHorizontal size={13} /> Alterações {files.length > 0 && <small>{files.length}</small>}</button>
+      <button type="button" role="tab" aria-selected={tab === 'branches'} className={tab === 'branches' ? 'active' : ''} onClick={() => setTab('branches')}><GitBranch size={13} /> Branches {remote.data && <small>{remote.data.branches.length}</small>}</button>
+      <button type="button" role="tab" aria-selected={tab === 'pulls'} className={tab === 'pulls' ? 'active' : ''} onClick={() => setTab('pulls')}><GitPullRequest size={13} /> Pull requests {prCount !== null && <small>{prCount}</small>}</button>
+    </div>
+    {tab === 'branches' && (repo && url ? <BranchesPanel repo={repo} remote={remote} onOpenPr={(head) => { setPrHead(head); setTab('pulls'); }} /> : remoteNeeded)}
+    {tab === 'pulls' && (repo && url ? <PullRequestsPanel repo={repo} url={url} folder={folder} remote={remote} localBranches={data?.branches ?? []} currentBranch={data?.branch ?? ''} head={prHead} onCount={setPrCount} /> : remoteNeeded)}
+    {tab === 'changes' && <>{data && <><div className="git-meta"><GitBranch size={15} /> {data.branch || 'HEAD destacado'} <span>· {files.length} arquivo(s) alterado(s)</span></div><div className="tools-columns"><section><h2>Arquivos</h2>{files.length ? files.map((item) => <div className="git-file" key={item.path}><button onClick={async () => { setFile(item.path); try { setDiff(await invoke<string>('git_file_diff', { folder, file: item.path, staged: item.code[0] !== ' ' })); } catch (reason) { setError(String(reason)); } }}><code>{item.code}</code>{item.path}</button><button aria-label={`${item.code[0] === ' ' || item.code === '??' ? 'Stage' : 'Unstage'} ${item.path}`} onClick={() => void action(() => invoke('git_stage', { folder, file: item.path, stage: item.code[0] === ' ' || item.code === '??' }))}>{item.code[0] === ' ' || item.code === '??' ? '+' : '−'}</button></div>) : <p>Nenhuma alteração.</p>}<div className="git-commit"><input aria-label="Mensagem de commit" placeholder="Mensagem do commit" value={message} onChange={(event) => setMessage(event.target.value)} /><button onClick={() => void action(async () => { await invoke('git_commit', { folder, message }); setMessage(''); })}>Commit</button></div></section><section><h2>Diff {file && <small>· {file}</small>}</h2>{file ? <div className="diff-view">{diffRows.map((row, index) => <div className="diff-row" key={index}><code className={row.left.startsWith('-') ? 'removed' : ''}>{row.left}</code><code className={row.right.startsWith('+') ? 'added' : ''}>{row.right}</code></div>)}</div> : <p>Selecione um arquivo.</p>}</section></div><div className="tools-columns lower"><section><h2>Branches</h2>{data.branches.map((name) => <div className="git-list-row" key={name}>{name}</div>)}</section><section><h2>Worktrees</h2><pre>{data.worktrees || 'Nenhum worktree.'}</pre><div className="git-commit"><input aria-label="Nova branch de worktree" placeholder="Nome da nova branch" value={branch} onChange={(event) => setBranch(event.target.value)} /><button onClick={() => void action(async () => { await invoke('git_create_worktree', { folder, branch }); setBranch(''); })}>Criar worktree</button></div></section></div></>}</>}</div>;
 }
 
 function McpView({ folder }: { folder: string | null }) {
@@ -59,5 +98,5 @@ export function ToolsView() {
   const state = useAppStore();
   const project = state.workspace.projects.find((item) => item.id === state.activeProjectId);
   const folder = project?.folder ?? null;
-  return state.section === 'git' ? <GitView folder={folder} /> : state.section === 'mcp' ? <McpView folder={folder} /> : <SkillsView folder={folder} />;
+  return state.section === 'git' ? <GitView folder={folder} repoUrl={project?.repoUrl ?? null} /> : state.section === 'mcp' ? <McpView folder={folder} /> : <SkillsView folder={folder} />;
 }

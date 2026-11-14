@@ -23,6 +23,7 @@ pub struct Project {
     pub layout: String,
     pub split_ratio: f64,
     pub icon: Option<String>,
+    pub repo_url: Option<String>,
     pub updated_at: i64,
 }
 
@@ -61,6 +62,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
         && version != 5
         && version != 6
         && version != 7
+        && version != 8
     {
         return Err(format!("Versão de banco não suportada: {version}"));
     }
@@ -111,6 +113,12 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             PRAGMA user_version = 7;
             COMMIT;").map_err(|e| e.to_string())?;
     }
+    if version < 8 {
+        connection.execute_batch("BEGIN;
+            ALTER TABLE projects ADD COLUMN repo_url TEXT;
+            PRAGMA user_version = 8;
+            COMMIT;").map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -145,7 +153,7 @@ impl WorkspaceDb {
             .map_err(|e| e.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
-        let mut projects_query = connection.prepare("SELECT id, group_id, name, folder, layout, split_ratio, icon, updated_at FROM projects ORDER BY updated_at DESC, rowid DESC").map_err(|e| e.to_string())?;
+        let mut projects_query = connection.prepare("SELECT id, group_id, name, folder, layout, split_ratio, icon, updated_at, repo_url FROM projects ORDER BY updated_at DESC, rowid DESC").map_err(|e| e.to_string())?;
         let projects = projects_query
             .query_map([], |row| {
                 Ok(Project {
@@ -157,6 +165,7 @@ impl WorkspaceDb {
                     split_ratio: row.get(5)?,
                     icon: row.get(6)?,
                     updated_at: row.get(7)?,
+                    repo_url: row.get(8)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -329,8 +338,10 @@ pub fn project_create(
     name: String,
     folder: Option<String>,
     group_id: Option<String>,
+    repo_url: Option<String>,
 ) -> Result<WorkspaceSnapshot, String> {
     let name = clean_name(name)?;
+    let repo_url = crate::git_tools::clean_repo_url(repo_url)?;
     let folder = folder
         .filter(|value| !value.trim().is_empty())
         .ok_or("Escolha a pasta do projeto.")?;
@@ -341,8 +352,8 @@ pub fn project_create(
     }
     let folder = Some(path.to_string_lossy().into_owned());
     let connection = state.0.lock().map_err(|e| e.to_string())?;
-    connection.execute("INSERT INTO projects (id, group_id, name, folder, updated_at) VALUES (?1, ?2, ?3, ?4, unixepoch())",
-        params![uuid::Uuid::new_v4().to_string(), group_id, name, folder]).map_err(|e| e.to_string())?;
+    connection.execute("INSERT INTO projects (id, group_id, name, folder, repo_url, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, unixepoch())",
+        params![uuid::Uuid::new_v4().to_string(), group_id, name, folder, repo_url]).map_err(|e| e.to_string())?;
     drop(connection);
     state.snapshot()
 }
@@ -454,8 +465,10 @@ pub fn project_update(
     name: String,
     folder: String,
     group_id: Option<String>,
+    repo_url: Option<String>,
 ) -> Result<WorkspaceSnapshot, String> {
     let name = clean_name(name)?;
+    let repo_url = crate::git_tools::clean_repo_url(repo_url)?;
     let path = fs::canonicalize(folder.trim())
         .map_err(|_| "A pasta não existe ou não está acessível.".to_string())?;
     if !path.is_dir() {
@@ -466,8 +479,8 @@ pub fn project_update(
     let connection = state.0.lock().map_err(|e| e.to_string())?;
     let changed = connection
         .execute(
-            "UPDATE projects SET name=?2, folder=?3, group_id=?4, updated_at=unixepoch() WHERE id=?1",
-            params![id, name, folder, group_id],
+            "UPDATE projects SET name=?2, folder=?3, group_id=?4, repo_url=?5, updated_at=unixepoch() WHERE id=?1",
+            params![id, name, folder, group_id, repo_url],
         )
         .map_err(|e| e.to_string())?;
     if changed == 0 {
@@ -583,7 +596,7 @@ mod tests {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
         connection
             .execute("INSERT INTO groups (id, name) VALUES ('g1', 'Equipe')", [])
             .unwrap();

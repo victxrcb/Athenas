@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ImagePlus, Trash2, X } from 'lucide-react';
+import { RepoField } from './RepoField';
 import { Select } from './Select';
 import { displayPath } from './path';
 import { ProjectIcon, imageToIcon } from './ProjectIcon';
@@ -12,6 +13,7 @@ export function ProjectEditor({ project, onClose }: { project: ProjectInfo; onCl
   const [name, setName] = useState(project.name);
   const [folder, setFolder] = useState(displayPath(project.folder ?? ''));
   const [groupId, setGroupId] = useState(project.groupId ?? '');
+  const [repoUrl, setRepoUrl] = useState(project.repoUrl ?? '');
   const [saving, setSaving] = useState(false);
   // undefined = keep the stored icon, null = back to the default folder, string = new image
   const [icon, setIcon] = useState<string | null | undefined>(undefined);
@@ -29,7 +31,7 @@ export function ProjectEditor({ project, onClose }: { project: ProjectInfo; onCl
       event.preventDefault();
       setSaving(true);
       try {
-        let next = await invoke<WorkspaceSnapshot>('project_update', { id: project.id, name, folder, groupId: groupId || null });
+        let next = await invoke<WorkspaceSnapshot>('project_update', { id: project.id, name, folder, groupId: groupId || null, repoUrl: repoUrl.trim() || null });
         if (icon !== undefined) next = await invoke<WorkspaceSnapshot>('project_set_icon', { id: project.id, icon });
         setWorkspace(next);
         onClose();
@@ -60,6 +62,7 @@ export function ProjectEditor({ project, onClose }: { project: ProjectInfo; onCl
         <Select label="Grupo" value={groupId} onChange={setGroupId} options={[{ value: '', label: 'Sem grupo' }, ...workspace.groups.map((group) => ({ value: group.id, label: group.name }))]} />
       </div>
       <label className="form-field"><span>Pasta</span><div className="folder-row"><input value={folder} onChange={(event) => setFolder(event.target.value)} required /><button type="button" className="button-quiet" onClick={() => void choose()}>Escolher pasta</button></div></label>
+      <RepoField value={repoUrl} onChange={setRepoUrl} folder={folder} />
       <div className="modal-footer"><span /><div><button type="button" className="button-quiet" onClick={onClose}>Cancelar</button><button className="button-primary" disabled={saving}>Salvar</button></div></div>
     </form>
   </div>;
