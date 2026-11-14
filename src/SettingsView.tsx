@@ -7,7 +7,7 @@ import { ZOOM_LEVELS, applyZoom, loadZoom, stepZoom } from './zoom';
 import { Eye, EyeOff, Minus, Plus } from 'lucide-react';
 import { DEFAULT_FONT, FONT_PRESETS, applyFont, fontStack, isValidFontName, loadFont, type FontChoice } from './font';
 import { SIDEBAR_ITEMS, setSidebarHidden, setSidebarItem, useSidebarPrefs } from './sidebarPrefs';
-import { DEFAULT_MASCOT, MASCOT_COLORS, MASCOT_EYES, saveMascot, useMascot } from './mascot';
+import { DEFAULT_MASCOT, MASCOT_COLORS, MASCOT_EYES, MASCOT_OUTFITS, saveMascot, useMascot } from './mascot';
 import { MascotIcon } from './MascotIcon';
 
 export function SettingsView() {
@@ -57,6 +57,9 @@ export function SettingsView() {
               </div>
               <div className="mascot-row"><small>Olhos</small>
                 {MASCOT_EYES.map((item) => <button type="button" key={item.id} className="button-quiet button-sm mascot-chip" aria-pressed={mascot.eyes === item.id} onClick={() => saveMascot({ ...mascot, eyes: item.id })}>{item.label}</button>)}
+              </div>
+              <div className="mascot-row"><small>Estilo</small>
+                {MASCOT_OUTFITS.map((item) => <button type="button" key={item.id} className="button-quiet button-sm mascot-chip mascot-outfit" aria-pressed={mascot.outfit === item.id} onClick={() => saveMascot({ ...mascot, outfit: item.id })}><MascotIcon config={{ ...mascot, outfit: item.id }} size={14} className="mascot-outfit-icon" />{item.label}</button>)}
               </div>
               <div className="mascot-row"><small>Extras</small>
                 <button type="button" className="button-quiet button-sm mascot-chip" aria-pressed={mascot.antennas} onClick={() => saveMascot({ ...mascot, antennas: !mascot.antennas })}>Antenas</button>

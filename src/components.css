@@ -293,6 +293,8 @@ input[type="checkbox"]:checked::after { content: ""; width: 8px; height: 4px; bo
 .mascot-swatch { width: 20px; height: 20px; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--r-xs); }
 .mascot-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--focus); }
 .mascot-color-input { width: 24px; height: 24px; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--r-xs); background: transparent; cursor: pointer; }
+.mascot-outfit { display: inline-flex; align-items: center; gap: 5px; }
+.mascot-outfit-icon { flex: none; }
 .mascot-chip[aria-pressed="true"] { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); color: var(--text); }
 
 /* Zoom picker (settings) */
