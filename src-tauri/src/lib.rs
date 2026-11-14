@@ -78,6 +78,7 @@ pub fn run() {
             git_tools::git_pull_requests,
             git_tools::git_create_pull_request,
             git_tools::git_open_url,
+            git_tools::git_trust_folder,
             skills::skills_list,
             skills::skill_open_folder,
             mcp_config::mcp_config_list,

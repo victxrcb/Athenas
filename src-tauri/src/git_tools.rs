@@ -50,9 +50,31 @@ fn git(folder: &Path, args: &[&str]) -> Result<String, String> {
         .map_err(|e| format!("Git não encontrado no PATH: {e}"))?;
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
+        if error.contains("dubious ownership") {
+            return Err(UNTRUSTED.into());
+        }
         return Err(error.trim().chars().take(1000).collect());
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Prefix the UI looks for to offer the "trust this folder" action.
+pub const UNTRUSTED: &str = "PASTA_NAO_CONFIAVEL: o Git bloqueou esta pasta porque ela pertence a outro usuário do Windows (\"dubious ownership\").";
+
+/// Adds the project folder to the user's `safe.directory` list (global git config), after an explicit click.
+#[tauri::command]
+pub fn git_trust_folder(folder: String) -> Result<(), String> {
+    let path = project_dir(&folder)?;
+    let text = path.to_string_lossy();
+    let clean = text.strip_prefix(r"\\?\").unwrap_or(&text).replace('\\', "/");
+    let output = command("git")
+        .args(["config", "--global", "--add", "safe.directory", &clean])
+        .output()
+        .map_err(|e| format!("Git não encontrado no PATH: {e}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().chars().take(500).collect());
+    }
+    Ok(())
 }
 
 fn file_pathspec(file: &str) -> Result<String, String> {

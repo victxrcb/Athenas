@@ -46,7 +46,8 @@ describe('home', () => {
   it('opens Git tools and asks for a project when none is selected', async () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Git' }));
-    expect(await screen.findByText('Escolha um projeto com pasta para usar Git.')).toBeTruthy();
+    expect(await screen.findByText('Crie um projeto com pasta para usar Git.')).toBeTruthy();
+    expect(document.querySelector('.git-empty button')?.textContent).toContain('Novo projeto');
   });
 
   it('opens the visual agent mapping from the sidebar', async () => {

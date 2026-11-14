@@ -126,3 +126,9 @@
   .git-panel-head { align-items: flex-start; }
   .git-filter input { width: 100px; }
 }
+.git-untrusted { align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.git-untrusted > div { line-height: 1.5; }
+.git-untrusted button { flex: none; }
+.git-empty { display: grid; justify-items: center; gap: var(--sp-3); text-align: center; }
+.git-empty p { margin: 0; }
+.git-project-picker { min-width: 220px; }

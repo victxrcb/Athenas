@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { ExternalLink, FolderOpen, GitBranch, GitCommitHorizontal, GitPullRequest, RefreshCw, Save } from 'lucide-react';
+import { ExternalLink, FolderOpen, Plus, GitBranch, GitCommitHorizontal, GitPullRequest, RefreshCw, Save } from 'lucide-react';
 import { BranchesPanel, PullRequestsPanel, openUrl, providerName, useRemoteBranches, type RepoInfo } from './GitRemote';
-import { useAppStore } from './store';
+import { Select } from './Select';
+import { sameFolder } from './path';
+import { useAppStore, type ProjectInfo } from './store';
+
+const UNTRUSTED = 'PASTA_NAO_CONFIAVEL';
 
 type GitSnapshot = { branch: string; status: string; branches: string[]; worktrees: string };
 type McpConfig = { id: string; agent: string; path: string; text: string; servers: string[] };
@@ -10,7 +14,7 @@ type Skill = { name: string; description: string; path: string; agent: string };
 
 type GitTab = 'changes' | 'branches' | 'pulls';
 
-function GitView({ folder, repoUrl }: { folder: string | null; repoUrl: string | null }) {
+function GitView({ folder, repoUrl, picker }: { folder: string | null; repoUrl: string | null; picker: React.ReactNode }) {
   const [tab, setTab] = useState<GitTab>('changes');
   const [prHead, setPrHead] = useState<string | null>(null);
   const [prCount, setPrCount] = useState<number | null>(null);
@@ -45,7 +49,7 @@ function GitView({ folder, repoUrl }: { folder: string | null; repoUrl: string |
     catch (reason) { setError(String(reason)); }
   };
   useEffect(() => { void refresh(); }, [folder]);
-  if (!folder) return <div className="tools-empty">Escolha um projeto com pasta para usar Git.</div>;
+  if (!folder) return <div className="tools-empty git-empty"><p>Crie um projeto com pasta para usar Git.</p><button type="button" className="button-primary" onClick={() => useAppStore.getState().openProject()}><Plus size={14} /> Novo projeto</button></div>;
   if (!isTauri()) return <div className="tools-empty">Abra o aplicativo desktop para usar Git.</div>;
   const files = data?.status.split('\n').filter(Boolean).map((line) => ({ code: line.slice(0, 2), path: line.slice(3) })) ?? [];
   const action = async (task: () => Promise<unknown>) => { try { await task(); await refresh(); setError(null); } catch (reason) { setError(String(reason)); } };
@@ -55,8 +59,11 @@ function GitView({ folder, repoUrl }: { folder: string | null; repoUrl: string |
     : repoError ? <p className="git-repo-line">Link do repositório inválido: {repoError}</p>
     : <p className="git-repo-line">Sem repositório remoto. Adicione o link em <em>Editar projeto</em>.</p>;
   const remoteNeeded = <div className="tools-empty inline">Adicione o link do repositório em <em>Editar projeto</em> (ou um remoto <code>origin</code> na pasta) para acompanhar branches e pull requests.</div>;
-  return <div className="tools-content"><div className="tools-heading"><div><span className="section-kicker">Controle de versão</span><h1>Git</h1><p>{folder}</p>{repoLine}</div><button onClick={() => { void refresh(); if (tab === 'branches') void remote.reload(); }}><RefreshCw size={15} /> Atualizar</button></div>
-    {error && <p className="tools-error" role="alert">{error}</p>}
+  return <div className="tools-content"><div className="tools-heading"><div><span className="section-kicker">Controle de versão</span><h1>Git</h1><p>{folder}</p>{repoLine}</div><div className="heading-actions">{picker}<button className="button-quiet" onClick={() => { void refresh(); if (tab === 'branches') void remote.reload(); }}><RefreshCw size={15} /> Atualizar</button></div></div>
+    {error && (error.startsWith(UNTRUSTED)
+      ? <div className="tools-error git-untrusted" role="alert"><div><strong>O Git bloqueou esta pasta.</strong> Ela pertence a outro usuário do Windows ("dubious ownership"), então status, diff e commit ficam indisponíveis. Branches e pull requests remotos continuam funcionando.</div>
+          <button type="button" className="button-quiet button-sm" onClick={() => void invoke('git_trust_folder', { folder }).then(() => { setError(null); void refresh(); void remote.reload(); }).catch((reason) => setError(String(reason)))}>Confiar nesta pasta</button></div>
+      : <p className="tools-error" role="alert">{error}</p>)}
     <div className="segmented git-tabs" role="tablist" aria-label="Seções do Git">
       <button type="button" role="tab" aria-selected={tab === 'changes'} className={tab === 'changes' ? 'active' : ''} onClick={() => setTab('changes')}><GitCommitHorizontal size={13} /> Alterações {files.length > 0 && <small>{files.length}</small>}</button>
       <button type="button" role="tab" aria-selected={tab === 'branches'} className={tab === 'branches' ? 'active' : ''} onClick={() => setTab('branches')}><GitBranch size={13} /> Branches {remote.data && <small>{remote.data.branches.length}</small>}</button>
@@ -94,9 +101,27 @@ function SkillsView({ folder }: { folder: string | null }) {
   return <div className="tools-content"><div className="tools-heading"><div><span className="section-kicker">Somente leitura</span><h1>Skills</h1><p>Skills instaladas para Claude Code e Codex.</p></div></div>{error && <p className="tools-error" role="alert">{error}</p>}{skills.length ? <div className="skills-list">{skills.map((skill) => <div className="skill-card" key={`${skill.agent}:${skill.path}`}><div><span>{skill.agent}</span><h2>{skill.name}</h2><p>{skill.description || 'Sem descrição.'}</p><small>{skill.path}</small></div><button aria-label={`Abrir pasta de ${skill.name}`} onClick={() => void invoke('skill_open_folder', { projectFolder: folder, path: skill.path }).catch((reason) => setError(String(reason)))}><FolderOpen size={17} /></button></div>)}</div> : <p>Nenhuma skill encontrada.</p>}</div>;
 }
 
+/**
+ * Project used by the tool pages. Opening a session from the sidebar clears the active project,
+ * so fall back to the session's project, then to a project with a repository, then to any project.
+ */
+export function toolsProject(projects: ProjectInfo[], activeProjectId: string | null, sessionFolder: string | null): ProjectInfo | undefined {
+  const withFolder = projects.filter((item) => item.folder);
+  return withFolder.find((item) => item.id === activeProjectId)
+    ?? (sessionFolder ? withFolder.find((item) => sameFolder(item.folder, sessionFolder)) : undefined)
+    ?? withFolder.find((item) => item.repoUrl)
+    ?? withFolder[0];
+}
+
 export function ToolsView() {
   const state = useAppStore();
-  const project = state.workspace.projects.find((item) => item.id === state.activeProjectId);
+  const session = state.sessions.find((item) => item.id === state.activeSessionId);
+  const project = toolsProject(state.workspace.projects, state.activeProjectId, session?.folder ?? null);
   const folder = project?.folder ?? null;
-  return state.section === 'git' ? <GitView folder={folder} repoUrl={project?.repoUrl ?? null} /> : state.section === 'mcp' ? <McpView folder={folder} /> : <SkillsView folder={folder} />;
+  const activeFolder = state.workspace.projects.find((item) => item.id === state.activeProjectId)?.folder ?? null;
+  const choices = state.workspace.projects.filter((item) => item.folder);
+  const picker = choices.length ? <div className="orchestration-field git-project-picker"><span>Projeto</span><Select label="Projeto" value={project?.id ?? ''} onChange={(id) => state.setActiveProjectId(id)} options={choices.map((item) => ({ value: item.id, label: item.name }))} /></div> : null;
+  return state.section === 'git' ? <GitView key={project?.id ?? 'none'} folder={folder} repoUrl={project?.repoUrl ?? null} picker={picker} /> 
+    // MCP and Skills can write project-scoped config, so they only use an explicitly active project.
+    : state.section === 'mcp' ? <McpView folder={activeFolder} /> : <SkillsView folder={activeFolder} />;
 }
