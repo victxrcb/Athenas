@@ -252,9 +252,9 @@ a[href="#video"].button:hover svg { transform: translateX(3px) scale(1.15); }
 .nav-links a.current { color: var(--fg); }
 
 .icon-link { transition: color .25s, border-color .25s, transform .35s var(--spring), background-color .25s; }
-.icon-link:hover { transform: rotate(-8deg) scale(1.08); background: var(--bg-2); }
+.icon-link:hover { transform: scale(1.08); background: var(--bg-2); }
 .brand img { transition: transform .6s var(--spring); }
-.brand:hover img { transform: rotate(-14deg) scale(1.06); }
+.brand:hover img { transform: scale(1.06); }
 .footer-meta a, .release-meta a { text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px; transition: color .2s, text-decoration-color .2s; }
 .footer-meta a:hover, .release-meta a:hover { color: var(--fg); text-decoration-color: var(--gold); }
 
@@ -265,7 +265,7 @@ a[href="#video"].button:hover svg { transform: translateX(3px) scale(1.15); }
 .agents li:hover img { animation: spin-in .6s var(--ease-out); }
 .agents li:hover .prompt { animation: blink .9s steps(1) 2; }
 @keyframes hop { 40% { translate: 0 -5px; } 100% { translate: 0 0; } }
-@keyframes spin-in { from { rotate: -90deg; scale: .7; } to { rotate: 0deg; scale: 1; } }
+@keyframes spin-in { from { scale: .7; } to { scale: 1; } }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* Prints: elevam, ganham brilho e aproximam levemente. */
@@ -276,7 +276,7 @@ a[href="#video"].button:hover svg { transform: translateX(3px) scale(1.15); }
 
 /* Funcionalidades: o ícone acende quando o bloco está em foco. */
 .glyph { transition: background-color .3s, color .3s, border-color .3s, transform .45s var(--spring); }
-.feature:hover .glyph { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong)); transform: rotate(-6deg) scale(1.08); }
+.feature:hover .glyph { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong)); transform: scale(1.08); }
 .checks li { transition: translate .3s var(--ease-out); }
 .checks li:hover { translate: 4px 0; }
 
@@ -291,7 +291,7 @@ a[href="#video"].button:hover svg { transform: translateX(3px) scale(1.15); }
 .theme-chip:hover { transform: translateY(-2px); background: var(--bg-2); }
 .theme-chip:active { transform: scale(.95); transition-duration: .08s; }
 .swatch { transition: transform .5s var(--spring); }
-.theme-chip:hover .swatch { transform: rotate(-20deg) scale(1.12); }
+.theme-chip:hover .swatch { transform: scale(1.12); }
 .theme-chip[aria-pressed="true"] .swatch { animation: pop .45s var(--spring); }
 @keyframes pop { 0% { scale: .6; } 100% { scale: 1; } }
 
