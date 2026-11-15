@@ -14,8 +14,8 @@
   <meta name="twitter:card" content="summary_large_image">
   <link rel="preload" href="assets/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/cinzel-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="css/themes.css">
-  <link rel="stylesheet" href="css/site.css">
+  <link rel="stylesheet" href="css/themes.css?v=0.1.18">
+  <link rel="stylesheet" href="css/site.css?v=0.1.18">
   <script>
     // Aplica tema e idioma antes da pintura para evitar piscar.
     (function () {
@@ -29,7 +29,7 @@
       } catch (e) { /* armazenamento indisponível */ }
     })();
   </script>
-  <script src="js/site.js" defer></script>
+  <script src="js/site.js?v=0.1.18" defer></script>
 </head>
 <body>
   <!-- Ícones de funcionalidades: Lucide (https://lucide.dev), licença ISC. -->
@@ -67,14 +67,18 @@
         <p class="kicker mono"><span class="dot live"></span> <span data-i18n="hero.kicker">Open source · Windows · macOS · Linux · Local-first</span></p>
         <h1 data-i18n-html="hero.title">Seus agentes de IA<br><span class="accent">em um só painel.</span></h1>
         <p class="lead" data-i18n="hero.lead">Claude Code, Codex e terminais reais organizados em projetos. Orquestre workers, revise diffs e personalize tudo — sem conta e sem nuvem.</p>
-        <div class="cta-row">
-          <a class="button button-primary download-hero" href="https://github.com/victxrcb/Athenas/releases/latest">
-            <svg class="os-only" data-os="windows" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 5.1 10.4 4v7.1H3zm0 13.8 7.4 1.1v-7H3zm8.3 1.2L21 21.5V12.9h-9.7zM11.3 3.9v7.2H21V2.5z"/></svg>
-            <svg class="os-only" data-os="mac" hidden viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/></svg>
-            <svg class="os-only" data-os="linux" hidden viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg>
-            <span class="os-only" data-os="windows" data-i18n="cta.windows">Baixar para Windows</span>
-            <span class="os-only" data-os="mac" data-i18n="cta.mac" hidden>Baixar para macOS</span>
-            <span class="os-only" data-os="linux" data-i18n="cta.linux" hidden>Baixar para Linux</span>
+        <div class="cta-row hero-downloads">
+          <a class="button download-exe" data-os="windows" href="https://github.com/victxrcb/Athenas/releases/latest" aria-label="Baixar para Windows" data-i18n-aria="cta.windows">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 5.1 10.4 4v7.1H3zm0 13.8 7.4 1.1v-7H3zm8.3 1.2L21 21.5V12.9h-9.7zM11.3 3.9v7.2H21V2.5z"/></svg>
+            <span>Windows</span>
+          </a>
+          <a class="button download-dmg" data-os="mac" href="https://github.com/victxrcb/Athenas/releases/latest" aria-label="Baixar para macOS" data-i18n-aria="cta.mac">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/></svg>
+            <span>macOS</span>
+          </a>
+          <a class="button download-appimage" data-os="linux" href="https://github.com/victxrcb/Athenas/releases/latest" aria-label="Baixar para Linux" data-i18n-aria="cta.linux">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg>
+            <span>Linux</span>
           </a>
           <a class="button button-quiet" href="#video">
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
@@ -269,64 +273,74 @@
     <!-- Download -->
     <section class="section" id="download">
       <div class="container">
-        <div class="download-card">
-          <div class="download-copy">
-            <p class="kicker mono">// download</p>
-            <h2 data-i18n="dl.title">Baixe o Athenas Agent</h2>
-            <p data-i18n="dl.lead">Gratuito e open source. O app se atualiza sozinho quando sai uma versão nova.</p>
-            <div class="segmented os-switch" role="group" aria-label="Sistema operacional" data-i18n-aria="dl.os">
-              <button type="button" data-os-pick="windows" aria-pressed="true">Windows</button>
-              <button type="button" data-os-pick="mac" aria-pressed="false">macOS</button>
-              <button type="button" data-os-pick="linux" aria-pressed="false">Linux</button>
+        <div class="download-head">
+          <p class="kicker mono">// download</p>
+          <h2 data-i18n="dl.title">Baixe o Athenas Agent</h2>
+          <p data-i18n="dl.lead">Gratuito e open source. O app se atualiza sozinho quando sai uma versão nova.</p>
+          <p class="release-meta mono"><span class="release-version">v0.1.18</span><span class="release-date"></span> · <a href="https://github.com/victxrcb/Athenas/releases" data-i18n="dl.all">todas as versões</a></p>
+        </div>
+        <div class="platforms">
+          <article class="platform" data-os="windows">
+            <header class="platform-head">
+              <span class="platform-icon"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 5.1 10.4 4v7.1H3zm0 13.8 7.4 1.1v-7H3zm8.3 1.2L21 21.5V12.9h-9.7zM11.3 3.9v7.2H21V2.5z"/></svg></span>
+              <h3>Windows</h3>
+              <span class="platform-badge mono" data-i18n="dl.yours">seu sistema</span>
+            </header>
+            <div class="platform-actions">
+              <a class="button button-primary download-exe" href="https://github.com/victxrcb/Athenas/releases/latest"><span data-i18n="dl.exe">Instalador</span> <small class="mono exe-size">.exe</small></a>
+              <a class="button button-quiet download-msi" href="https://github.com/victxrcb/Athenas/releases/latest"><span data-i18n="dl.msi">Pacote MSI</span> <small class="mono msi-size">.msi</small></a>
             </div>
-            <div class="cta-row os-only" data-os="windows">
-              <a class="button button-primary button-lg download-exe" href="https://github.com/victxrcb/Athenas/releases/latest">
-                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 5.1 10.4 4v7.1H3zm0 13.8 7.4 1.1v-7H3zm8.3 1.2L21 21.5V12.9h-9.7zM11.3 3.9v7.2H21V2.5z"/></svg>
-                <span><span data-i18n="dl.exe">Windows · instalador</span> <small class="mono exe-size">.exe</small></span>
-              </a>
-              <a class="button button-quiet download-msi" href="https://github.com/victxrcb/Athenas/releases/latest">
-                <span data-i18n="dl.msi">Pacote MSI</span> <small class="mono msi-size">.msi</small>
-              </a>
-            </div>
-            <div class="cta-row os-only" data-os="mac" hidden>
-              <a class="button button-primary button-lg download-dmg" href="https://github.com/victxrcb/Athenas/releases/latest">
-                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/></svg>
-                <span><span data-i18n="dl.dmg">macOS · Intel e Apple Silicon</span> <small class="mono dmg-size">.dmg</small></span>
-              </a>
-            </div>
-            <div class="cta-row os-only" data-os="linux" hidden>
-              <a class="button button-primary button-lg download-appimage" href="https://github.com/victxrcb/Athenas/releases/latest">
-                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg>
-                <span><span data-i18n="dl.appimage">Linux · AppImage</span> <small class="mono appimage-size">.AppImage</small></span>
-              </a>
-              <a class="button button-quiet download-deb" href="https://github.com/victxrcb/Athenas/releases/latest">
-                <span data-i18n="dl.deb">Pacote Debian/Ubuntu</span> <small class="mono deb-size">.deb</small>
-              </a>
-            </div>
-            <p class="release-meta mono"><span class="release-version">v0.1.18</span><span class="release-date"></span> · <a href="https://github.com/victxrcb/Athenas/releases" data-i18n="dl.all">todas as versões</a></p>
-          </div>
-          <div class="download-info">
-            <h3 class="mono" data-i18n="dl.req">Requisitos</h3>
-            <ul class="checks os-only" data-os="windows">
+            <ul class="checks">
               <li data-i18n="dl.r1">Windows 10 ou 11 (64 bits)</li>
               <li data-i18n="dl.r2">Microsoft Edge WebView2 (já vem no Windows 11)</li>
               <li data-i18n-html="dl.r3">CLI do <b>Claude Code</b> e/ou do <b>Codex</b> instalado</li>
             </ul>
-            <ul class="checks os-only" data-os="mac" hidden>
-              <li data-i18n="dl.mac.r1">macOS 11 Big Sur ou mais recente (Intel ou Apple Silicon)</li>
+            <details class="platform-note">
+              <summary data-i18n="dl.firstrun">Primeira execução</summary>
+              <p data-i18n="dl.smartscreen">O instalador ainda não tem assinatura digital, então o Windows SmartScreen pode avisar na primeira execução. Clique em “Mais informações” → “Executar assim mesmo”.</p>
+            </details>
+          </article>
+          <article class="platform" data-os="mac">
+            <header class="platform-head">
+              <span class="platform-icon"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/></svg></span>
+              <h3>macOS</h3>
+              <span class="platform-badge mono" data-i18n="dl.yours">seu sistema</span>
+            </header>
+            <div class="platform-actions">
+              <a class="button button-primary download-dmg" href="https://github.com/victxrcb/Athenas/releases/latest"><span data-i18n="dl.dmg">Instalador universal</span> <small class="mono dmg-size">.dmg</small></a>
+            </div>
+            <ul class="checks">
+              <li data-i18n="dl.mac.r1">macOS 11 Big Sur ou mais recente</li>
+              <li data-i18n="dl.mac.r4">Intel e Apple Silicon no mesmo instalador</li>
               <li data-i18n-html="dl.mac.r2">CLI do <b>Claude Code</b> e/ou do <b>Codex</b> instalado</li>
               <li data-i18n="dl.mac.r3">Notificações de agentes por enquanto só no Windows</li>
             </ul>
-            <ul class="checks os-only" data-os="linux" hidden>
+            <details class="platform-note">
+              <summary data-i18n="dl.firstrun">Primeira execução</summary>
+              <p data-i18n-html="dl.gatekeeper">O app ainda não é assinado pela Apple, então o macOS bloqueia a primeira abertura. Arraste o app para <b>Aplicativos</b>, tente abrir e vá em <b>Ajustes do Sistema → Privacidade e Segurança → Abrir mesmo assim</b>. Se aparecer “está danificado”, rode no Terminal: <code>xattr -cr "/Applications/Athenas Agent.app"</code></p>
+            </details>
+          </article>
+          <article class="platform" data-os="linux">
+            <header class="platform-head">
+              <span class="platform-icon"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg></span>
+              <h3>Linux</h3>
+              <span class="platform-badge mono" data-i18n="dl.yours">seu sistema</span>
+            </header>
+            <div class="platform-actions">
+              <a class="button button-primary download-appimage" href="https://github.com/victxrcb/Athenas/releases/latest"><span data-i18n="dl.appimage">AppImage</span> <small class="mono appimage-size">.AppImage</small></a>
+              <a class="button button-quiet download-deb" href="https://github.com/victxrcb/Athenas/releases/latest"><span data-i18n="dl.deb">Pacote Debian/Ubuntu</span> <small class="mono deb-size">.deb</small></a>
+            </div>
+            <ul class="checks">
               <li data-i18n="dl.linux.r1">Ubuntu 22.04+, Debian 12+ ou distro equivalente (64 bits)</li>
               <li data-i18n="dl.linux.r2">WebKitGTK 4.1 (já vem nas distros recentes)</li>
               <li data-i18n-html="dl.linux.r3">CLI do <b>Claude Code</b> e/ou do <b>Codex</b> instalado</li>
               <li data-i18n="dl.linux.r4">Notificações de agentes por enquanto só no Windows</li>
             </ul>
-            <p class="note os-only" data-os="windows" data-i18n="dl.smartscreen">O instalador ainda não tem assinatura digital, então o Windows SmartScreen pode avisar na primeira execução. Clique em “Mais informações” → “Executar assim mesmo”.</p>
-            <p class="note os-only" data-os="mac" data-i18n-html="dl.gatekeeper" hidden>O app ainda não é assinado pela Apple, então o macOS bloqueia a primeira abertura. Arraste o app para <b>Aplicativos</b>, tente abrir e vá em <b>Ajustes do Sistema → Privacidade e Segurança → Abrir mesmo assim</b>. Se aparecer “está danificado”, rode no Terminal: <code>xattr -cr "/Applications/Athenas Agent.app"</code></p>
-            <p class="note os-only" data-os="linux" data-i18n-html="dl.linuxnote" hidden>AppImage: dê permissão de execução com <code>chmod +x Athenas*.AppImage</code> e abra. O .deb instala com <code>sudo apt install ./arquivo.deb</code>. A atualização automática funciona no AppImage; no .deb, baixe a versão nova por aqui.</p>
-          </div>
+            <details class="platform-note">
+              <summary data-i18n="dl.firstrun">Primeira execução</summary>
+              <p data-i18n-html="dl.linuxnote">AppImage: dê permissão de execução com <code>chmod +x Athenas*.AppImage</code> e abra. O .deb instala com <code>sudo apt install ./arquivo.deb</code>. A atualização automática funciona no AppImage; no .deb, baixe a versão nova por aqui.</p>
+            </details>
+          </article>
         </div>
       </div>
     </section>

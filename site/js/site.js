@@ -48,12 +48,12 @@
     'custom.mascot.title': 'Claude mascot', 'custom.mascot.text': 'Color, eyes, antennas, blush and themed outfits.',
     'custom.ui.title': 'A tailored interface', 'custom.ui.b1': 'Interface font, including your installed fonts', 'custom.ui.b2': 'Zoom from 80% to 150%', 'custom.ui.b3': 'Visible shortcuts and a collapsible sidebar', 'custom.ui.b4': 'Per-project icons and an optional ASCII background',
     'dl.title': 'Download Athenas Agent', 'dl.lead': 'Free and open source. The app updates itself when a new version ships.',
-    'dl.exe': 'Windows · installer', 'dl.msi': 'MSI package', 'dl.all': 'all releases', 'dl.req': 'Requirements',
+    'dl.exe': 'Installer', 'dl.msi': 'MSI package', 'dl.all': 'all releases', 'dl.req': 'Requirements',
     'dl.r1': 'Windows 10 or 11 (64-bit)', 'dl.r2': 'Microsoft Edge WebView2 (built into Windows 11)', 'dl.r3': '<b>Claude Code</b> and/or <b>Codex</b> CLI installed',
     'dl.smartscreen': 'The installer is not code-signed yet, so Windows SmartScreen may warn on first run. Click “More info” → “Run anyway”.',
-    'cta.mac': 'Download for macOS', 'cta.linux': 'Download for Linux', 'dl.os': 'Operating system',
-    'dl.dmg': 'macOS · Intel and Apple Silicon', 'dl.appimage': 'Linux · AppImage', 'dl.deb': 'Debian/Ubuntu package',
-    'dl.mac.r1': 'macOS 11 Big Sur or later (Intel or Apple Silicon)', 'dl.mac.r2': '<b>Claude Code</b> and/or <b>Codex</b> CLI installed', 'dl.mac.r3': 'Agent notifications are Windows-only for now',
+    'cta.mac': 'Download for macOS', 'cta.linux': 'Download for Linux', 'dl.yours': 'your system', 'dl.firstrun': 'First launch',
+    'dl.dmg': 'Universal installer', 'dl.appimage': 'AppImage', 'dl.deb': 'Debian/Ubuntu package',
+    'dl.mac.r1': 'macOS 11 Big Sur or later', 'dl.mac.r4': 'Intel and Apple Silicon in one installer', 'dl.mac.r2': '<b>Claude Code</b> and/or <b>Codex</b> CLI installed', 'dl.mac.r3': 'Agent notifications are Windows-only for now',
     'dl.linux.r1': 'Ubuntu 22.04+, Debian 12+ or an equivalent distro (64-bit)', 'dl.linux.r2': 'WebKitGTK 4.1 (included in recent distros)', 'dl.linux.r3': '<b>Claude Code</b> and/or <b>Codex</b> CLI installed', 'dl.linux.r4': 'Agent notifications are Windows-only for now',
     'dl.gatekeeper': 'The app is not signed by Apple yet, so macOS blocks the first launch. Drag it to <b>Applications</b>, try to open it, then go to <b>System Settings → Privacy &amp; Security → Open Anyway</b>. If it says the app “is damaged”, run in Terminal: <code>xattr -cr "/Applications/Athenas Agent.app"</code>',
     'dl.linuxnote': 'AppImage: make it executable with <code>chmod +x Athenas*.AppImage</code> and open it. Install the .deb with <code>sudo apt install ./file.deb</code>. Automatic updates work with the AppImage; for the .deb, download new versions here.',
@@ -270,29 +270,18 @@
     ['download-appimage', 'appimage-size', '.AppImage', /\.AppImage$/i],
     ['download-deb', 'deb-size', '.deb', /\.deb$/i],
   ];
-  var PRIMARY = { windows: 'download-exe', mac: 'download-dmg', linux: 'download-appimage' };
-
   function detectOs() {
     var platform = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || '').toLowerCase();
     if (/mac|iphone|ipad/.test(platform)) return 'mac';
     if (/linux|x11|cros/.test(platform) && !/android/.test(navigator.userAgent.toLowerCase())) return 'linux';
     return 'windows';
   }
-  var os = detectOs();
 
-  /** Mostra os botões, requisitos e avisos do sistema escolhido; o botão do topo sempre segue o sistema detectado. */
-  function showOs(next) {
-    os = next;
-    document.querySelectorAll('.download-card .os-only').forEach(function (el) { el.hidden = el.dataset.os !== next; });
-    document.querySelectorAll('[data-os-pick]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.osPick === next)); });
-    syncThumbs();
-  }
-
-  function heroOs() {
-    var detected = detectOs();
-    document.querySelectorAll('.download-hero .os-only').forEach(function (el) { el.hidden = el.dataset.os !== detected; });
-    var primary = document.querySelector('.' + PRIMARY[detected]);
-    document.querySelectorAll('.download-hero').forEach(function (a) { a.href = primary ? primary.href : RELEASES; });
+  /** Os três downloads ficam sempre visíveis; o do sistema de quem visita ganha destaque. */
+  function markOs() {
+    var os = detectOs();
+    document.querySelectorAll('.hero-downloads [data-os]').forEach(function (a) { a.classList.toggle('button-primary', a.dataset.os === os); });
+    document.querySelectorAll('.platform').forEach(function (card) { card.classList.toggle('is-yours', card.dataset.os === os); });
   }
 
   function renderRelease() {
@@ -304,7 +293,6 @@
       document.querySelectorAll('.' + item[0]).forEach(function (a) { a.href = asset.browser_download_url; });
       document.querySelectorAll('.' + item[1]).forEach(function (el) { el.textContent = item[2] + ' · ' + formatSize(asset.size); });
     });
-    heroOs();
     var date = new Date(release.published_at);
     if (!isNaN(date.getTime())) {
       var label = new Intl.DateTimeFormat(lang === 'en' ? 'en-US' : 'pt-BR', { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
@@ -319,7 +307,7 @@
       .then(function (res) { if (!res.ok) throw new Error(res.status); return res.json(); })
       .then(function (data) { if (data && Array.isArray(data.assets)) { release = data; renderRelease(); } })
       .catch(function () {
-        document.querySelectorAll('.download-hero, .download-exe, .download-msi, .download-dmg, .download-appimage, .download-deb').forEach(function (a) { a.href = RELEASES; });
+        document.querySelectorAll('.download-exe, .download-msi, .download-dmg, .download-appimage, .download-deb').forEach(function (a) { a.href = RELEASES; });
       });
   }
 
@@ -384,12 +372,8 @@
   applyTheme(root.dataset.theme || 'preto-branco', false);
   if (lang === 'en') applyLang('en');
   setVideo(lang, true);
-  showOs(os);
-  heroOs();
+  markOs();
   setupThumbs();
-  document.querySelectorAll('[data-os-pick]').forEach(function (button) {
-    button.addEventListener('click', function () { showOs(button.dataset.osPick); });
-  });
   document.querySelectorAll('[data-lang]').forEach(function (button) {
     button.addEventListener('click', function () { switchLang(button.dataset.lang); });
   });
