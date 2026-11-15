@@ -38,6 +38,7 @@
 .history-message.user { justify-self: end; background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 .history-message small { display: block; margin-bottom: 3px; font-size: var(--fs-2xs); color: var(--text-muted); }
 .history-message p { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: var(--fs-sm); line-height: var(--lh); color: var(--text); }
+.history-preview-panel > .empty-panel { flex: 1; min-height: 220px; }
 .history-loading { margin: 0; padding: var(--sp-4); font-size: var(--fs-sm); color: var(--text-muted); }
 
 /* Consumo */

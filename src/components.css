@@ -314,3 +314,10 @@ input[type="checkbox"]:checked::after { content: ""; width: 8px; height: 4px; bo
 .field-hint.error { color: color-mix(in srgb, var(--error) 75%, var(--text)); }
 .repo-origin { margin-top: 6px; max-width: 100%; overflow: hidden; }
 .repo-origin code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-2xs); }
+
+/* Estado vazio de painéis (caixa de entrada, histórico): usado por telas carregadas sob demanda, por isso fica aqui. */
+.empty-panel { display: grid; justify-items: center; align-content: center; gap: 6px; padding: var(--sp-8) var(--sp-4); background: var(--surface-1); text-align: center; font-family: var(--font-ui); color: var(--text-muted); }
+.empty-panel > svg { margin-bottom: 2px; color: var(--text-muted); }
+.empty-panel strong { color: var(--text); font-size: var(--fs-md); font-weight: 600; }
+.empty-panel p { margin: 0; max-width: 460px; font-size: var(--fs-sm); line-height: var(--lh); }
+.empty-panel.compact { padding: var(--sp-5) var(--sp-4); }

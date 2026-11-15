@@ -77,10 +77,10 @@ function Conversations() {
             <small>{projectName(item.folder)} · {ago(item.updatedAt)} · {item.prompts} pedido(s) · {compactTokens(totalTokens(item.tokens))} tokens</small>
           </span>
         </button>)}
-        {!loading && !items.length && !error && <div className="inbox-empty compact"><p>{query ? 'Nenhuma conversa com esses termos.' : 'Nenhuma conversa encontrada em ~/.claude ou ~/.codex.'}</p></div>}
+        {!loading && !items.length && !error && <div className="empty-panel compact"><p>{query ? 'Nenhuma conversa com esses termos.' : 'Nenhuma conversa encontrada em ~/.claude ou ~/.codex.'}</p></div>}
       </div>
     </section>
-    <section className="history-preview-panel">{selected ? <Preview conversation={selected} /> : <div className="inbox-empty"><MessageSquare size={20} /><strong>Escolha uma conversa.</strong><p>Veja os pedidos e respostas e retome de onde parou.</p></div>}</section>
+    <section className="history-preview-panel">{selected ? <Preview conversation={selected} /> : <div className="empty-panel"><MessageSquare size={20} /><strong>Escolha uma conversa.</strong><p>Veja os pedidos e respostas e retome de onde parou.</p></div>}</section>
   </div>;
 }
 

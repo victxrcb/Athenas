@@ -66,11 +66,11 @@ export function InboxView() {
         <span className={`inbox-pill ${item.kind}`}>{KIND_LABEL[item.kind]}</span>
         <div className="inbox-actions"><button className="icon-button small" title="Dispensar" aria-label="Dispensar" onClick={() => dismiss(item)}><Check size={14} /></button></div>
       </div>)
-        : <div className="inbox-empty"><CheckCheck size={20} /><strong>Tudo em dia.</strong><p>Pedidos de aprovação e turnos terminados aparecem aqui enquanto você não os vê.</p></div>}
+        : <div className="empty-panel"><CheckCheck size={20} /><strong>Tudo em dia.</strong><p>Pedidos de aprovação e turnos terminados aparecem aqui enquanto você não os vê.</p></div>}
     </section>
     <div className="inbox-subheading"><h2><Clock3 size={15} /> Prompts agendados</h2><span>{pending.length} na fila</span></div>
     <section className="inbox-section">
-      {pending.length ? pending.map(scheduleRow) : <div className="inbox-empty compact"><p>Nenhum prompt na fila. Use <b>Agendar prompt</b> ou o botão de relógio no painel de um agente.</p></div>}
+      {pending.length ? pending.map(scheduleRow) : <div className="empty-panel compact"><p>Nenhum prompt na fila. Use <b>Agendar prompt</b> ou o botão de relógio no painel de um agente.</p></div>}
     </section>
     {past.length > 0 && <>
       <div className="inbox-subheading"><h2>Já executados</h2></div>

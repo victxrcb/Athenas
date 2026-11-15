@@ -21,10 +21,6 @@
 .inbox-pill.cancelled { --tone: var(--st-cancelled); }
 .inbox-actions { flex: none; display: flex; gap: 2px; opacity: .55; transition: opacity var(--dur) var(--ease); }
 .inbox-row:hover .inbox-actions, .schedule-row:hover .inbox-actions, .inbox-actions:focus-within { opacity: 1; }
-.inbox-empty { display: grid; justify-items: center; gap: 6px; padding: var(--sp-8) var(--sp-4); background: var(--surface-1); text-align: center; color: var(--text-muted); }
-.inbox-empty strong { color: var(--text); font-size: var(--fs-md); }
-.inbox-empty p { margin: 0; max-width: 460px; font-size: var(--fs-sm); }
-.inbox-empty.compact { padding: var(--sp-5) var(--sp-4); }
 .inbox-subheading { display: flex; align-items: baseline; justify-content: space-between; margin: var(--sp-6) 0 var(--sp-3); }
 .inbox-subheading h2 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-md); font-weight: 600; }
 .inbox-subheading span { font-size: var(--fs-xs); color: var(--text-muted); }
