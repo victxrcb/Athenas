@@ -22,3 +22,9 @@ npm.cmd run tauri -- build
 Gera NSIS e MSI em `src-tauri/target/release/bundle/`. Métricas e metas em [docs/F5.md](docs/F5.md).
 
 A arte de origem é de um item de terceiros do Steam Workshop. Revise os direitos antes de distribuir publicamente.
+
+## Licença
+
+O código do Athenas Agent é distribuído sob a [licença MIT](LICENSE): você pode usar, modificar e redistribuir livremente, mantendo o aviso de copyright.
+
+A licença MIT **não** cobre materiais de terceiros incluídos no projeto, como a arte de origem do Steam Workshop e logos/marcas de outros produtos (Claude, Codex, Spotify etc.), que continuam pertencendo aos respectivos donos.
