@@ -2,7 +2,7 @@
   "name": "athenas-agent",
   "private": true,
   "license": "MIT",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "type": "module",
   "scripts": {
     "app": "tauri dev",
