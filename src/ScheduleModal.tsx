@@ -57,7 +57,7 @@ export function ScheduleModal() {
     finally { setSaving(false); }
   };
 
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }} onKeyDown={(event) => { if (event.key === 'Escape') close(); }}>
     <form className="modal schedule-modal" role="dialog" aria-modal="true" aria-label="Agendar prompt" onSubmit={submit}>
       <div className="modal-top"><span className="section-kicker"><CalendarClock size={13} /> Agendar prompt</span><button type="button" className="icon-button" aria-label="Fechar" onClick={close}><X size={16} /></button></div>
       <h2>Envie mais tarde.</h2><p className="modal-intro">O texto é digitado no agente no horário escolhido, como se você tivesse enviado.</p>

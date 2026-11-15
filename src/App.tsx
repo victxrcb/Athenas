@@ -32,6 +32,7 @@ const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ def
 const ToolsView = lazy(() => import('./ToolsView').then((module) => ({ default: module.ToolsView })));
 const OrchestratorView = lazy(() => import('./OrchestratorView').then((module) => ({ default: module.OrchestratorView })));
 const MappingView = lazy(() => import('./MappingView').then((module) => ({ default: module.MappingView })));
+const HistoryView = lazy(() => import('./HistoryView').then((module) => ({ default: module.HistoryView })));
 const InboxView = lazy(() => import('./InboxView').then((module) => ({ default: module.InboxView })));
 const SettingsView = lazy(() => import('./SettingsView').then((module) => ({ default: module.SettingsView })));
 
@@ -283,6 +284,7 @@ export function App() {
         <div className="tab-spacer" /><UsageBar />
       </div>
       {state.section === 'mapping' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><MappingView /></Suspense>
+        : state.section === 'history' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><HistoryView /></Suspense>
         : state.section === 'inbox' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><InboxView /></Suspense>
         : state.section === 'orchestrator' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><OrchestratorView /></Suspense>
         : state.section !== 'home' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><ToolsView /></Suspense>

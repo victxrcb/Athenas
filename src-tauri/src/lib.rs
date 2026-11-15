@@ -1,4 +1,5 @@
 mod git_tools;
+mod history;
 pub mod links;
 mod mcp_config;
 pub mod notify;
@@ -83,6 +84,13 @@ pub fn run() {
             let scheduler = schedule::Scheduler::new(&app.handle()).map_err(std::io::Error::other)?;
             scheduler.start(app.handle().clone());
             app.manage(scheduler);
+            app.manage(history::HistoryIndex::new(&app.handle()).map_err(std::io::Error::other)?);
+            // Build the conversation index early so the first search is fast.
+            let warm = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(4));
+                let _ = warm.state::<history::HistoryIndex>().refresh();
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -149,6 +157,9 @@ pub fn run() {
             orchestrator::orchestration_permission,
             orchestrator::orchestration_abort,
             notify::notify_show,
+            history::history_search,
+            history::history_messages,
+            history::history_usage,
             schedule::schedule_list,
             schedule::schedule_create,
             schedule::schedule_cancel,
