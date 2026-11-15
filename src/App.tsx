@@ -187,7 +187,7 @@ function ProjectWorkspace({ project }: { project: ProjectInfo }) {
   const running = sessions.filter((session) => session.status === 'rodando').length;
   const resume = async (active: SessionInfo, paneId: string) => {
     try {
-      const resumed = await invoke<SessionInfo>('terminal_start', { agent: active.agent, folder: active.folder, command: active.command, resumeId: active.resumeId, paneId: active.paneId, resume: true, cols: 100, rows: 30, title: active.title ?? null });
+      const resumed = await invoke<SessionInfo>('terminal_start', { agent: active.agent, folder: active.folder, command: active.command, resumeId: active.resumeId, paneId: active.paneId, resume: true, cols: 100, rows: 30, title: active.title ?? null, replaceId: active.id });
       state.upsertSession(resumed); setActiveTabs((current) => ({ ...current, [paneId]: resumed.id }));
     } catch (error) { state.setNotice(String(error)); }
   };
@@ -274,7 +274,7 @@ export function App() {
   const goHome = () => { state.setSection('home'); state.setActiveProjectId(null); state.setActiveSessionId(null); };
   const homeTabActive = state.section === 'home' && !activeSession && !activeProject;
   const resumeActive = async (session: SessionInfo) => {
-    try { const resumed = await invoke<SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, paneId: session.paneId, resume: true, cols: 100, rows: 30, title: session.title ?? null }); state.upsertSession(resumed); state.setActiveSessionId(resumed.id); }
+    try { const resumed = await invoke<SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, paneId: session.paneId, resume: true, cols: 100, rows: 30, title: session.title ?? null, replaceId: session.id }); state.upsertSession(resumed); state.setActiveSessionId(resumed.id); }
     catch (error) { state.setNotice(String(error)); }
   };
   return <div className="app-shell">

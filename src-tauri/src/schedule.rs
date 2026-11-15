@@ -172,6 +172,7 @@ fn deliver(app: &AppHandle, item: &ScheduledPrompt) -> Result<String, String> {
         120,
         32,
         None,
+        None,
     )?;
     let _ = app.emit("terminal-status", info.clone());
     if shell {

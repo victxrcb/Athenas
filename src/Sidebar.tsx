@@ -78,7 +78,7 @@ export function Sidebar() {
 
   const resume = async (session: SessionInfo) => {
     try {
-      const resumed = await invoke<SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, paneId: session.paneId, resume: true, cols: 100, rows: 30, title: session.title ?? null });
+      const resumed = await invoke<SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, paneId: session.paneId, resume: true, cols: 100, rows: 30, title: session.title ?? null, replaceId: session.id });
       upsertSession(resumed); setSection('home'); setActiveSessionId(resumed.id);
     } catch (error) { setNotice(String(error)); }
   };

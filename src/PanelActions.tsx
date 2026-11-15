@@ -28,7 +28,7 @@ export function PanelActions({ pane, project, active, tabs, onActivate }: {
     }
     const next = await invoke<SessionInfo>('terminal_start', { agent: active.agent, folder: active.folder,
       command: active.command, resumeId: active.resumeId, paneId: active.paneId,
-      resume: active.agent !== 'Shell', mode: 'Normal', initialPrompt: null, cols: 100, rows: 30, title: active.title ?? null });
+      resume: active.agent !== 'Shell', mode: 'Normal', initialPrompt: null, cols: 100, rows: 30, title: active.title ?? null, replaceId: active.id });
     state.upsertSession(next);
     onActivate(next.id);
   };

@@ -246,8 +246,22 @@ pub fn terminal_start(
     cols: u16,
     rows: u16,
     title: Option<String>,
+    replace_id: Option<String>,
 ) -> Result<SessionInfo, String> {
     let folder = valid_folder(&folder)?;
+    // Resuming or restarting an ended session reuses its id, so the list keeps one entry instead of two.
+    if let Some(id) = &replace_id {
+        if uuid::Uuid::parse_str(id).is_err() {
+            return Err("ID inválido.".into());
+        }
+        let still_running = state.sessions.lock().map_err(|e| e.to_string())?.get(id).is_some_and(|running| running.lock().is_ok_and(|session| session.info.status == "rodando"));
+        if still_running {
+            return Err("Esta sessão ainda está rodando.".into());
+        }
+        if !state.saved.lock().map_err(|e| e.to_string())?.iter().any(|item| &item.id == id) {
+            return Err("Sessão não encontrada.".into());
+        }
+    }
     let title = match title {
         Some(value) => clean_title(&value)?,
         None => None,
@@ -327,7 +341,10 @@ pub fn terminal_start(
         }
     }
     builder.cwd(&folder);
-    let session_id = uuid::Uuid::new_v4().to_string();
+    let session_id = match &replace_id {
+        Some(id) => id.clone(),
+        None => uuid::Uuid::new_v4().to_string(),
+    };
     // Inherited by the agent's MCP servers so the Athenas MCP knows which session is calling.
     builder.env(crate::links::SESSION_ENV, &session_id);
     let resume_id = if agent == "Claude Code" {
@@ -377,6 +394,11 @@ pub fn terminal_start(
         format!("Não foi possível iniciar {agent}. Confira o comando e o PATH: {e}")
     })?;
     drop(pair.slave);
+    if replace_id.is_some() {
+        // Only once the new process is up: the old output goes (Claude reprints the conversation, so it would repeat).
+        let _ = fs::remove_file(state.log_path(&session_id));
+        state.deleted_sessions.lock().map_err(|e| e.to_string())?.remove(&session_id);
+    }
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     // A resumed conversation keeps the name it had; a new one is named after its first prompt.
@@ -617,7 +639,12 @@ fn finish_session(app: &AppHandle, running: &Arc<Mutex<RunningSession>>, id: &st
         let _ = state.update(info.clone());
         let _ = app.emit("terminal-status", info);
     }
-    state.sessions.lock().map(|mut sessions| { sessions.remove(id); }).ok();
+    // A resumed session may already run under the same id; only remove the entry if it is still this process.
+    state.sessions.lock().map(|mut sessions| {
+        if sessions.get(id).is_some_and(|current| Arc::ptr_eq(current, running)) {
+            sessions.remove(id);
+        }
+    }).ok();
 }
 
 #[tauri::command]
