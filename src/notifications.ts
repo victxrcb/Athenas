@@ -5,11 +5,12 @@ import codexIcon from './assets/brand/codex-icon.png';
 import { loadMascot, mascotPixels } from './mascot';
 import { displayPath } from './path';
 import { useAppStore, type SessionInfo } from './store';
+import { sessionOnScreen } from './activity';
 
 /** Desktop notifications when an agent finishes a turn or waits for approval. */
 export type AttentionKind = 'done' | 'approval' | 'error';
 type AttentionEvent = { sessionId: string; kind: AttentionKind; message: string };
-export type WorkerLike = { id: string; agent: string; brief: string; status: string; error?: string | null; permissionRequest?: string | null };
+export type WorkerLike = { id: string; agent: string; brief: string; status: string; error?: string | null; permissionRequest?: string | null; project?: string; branch?: string; finishedAt?: number | null };
 
 const KEY = 'athenas-notifications';
 const EVENT = 'athenas-notifications';
@@ -69,17 +70,8 @@ function sessionPlace(session: SessionInfo): string {
   const { workspace } = useAppStore.getState();
   const pane = workspace.panes.find((item) => item.id === session.paneId);
   const project = workspace.projects.find((item) => item.id === pane?.projectId);
-  return project?.name ?? displayPath(session.folder).split(/[\\/]/).filter(Boolean).at(-1) ?? '';
-}
-
-/** The user is already looking at this session, so a notification would only be noise. */
-function sessionOnScreen(session: SessionInfo): boolean {
-  if (!document.hasFocus()) return false;
-  const state = useAppStore.getState();
-  if (state.section !== 'home') return false;
-  if (state.activeSessionId) return state.activeSessionId === session.id;
-  const pane = state.workspace.panes.find((item) => item.id === session.paneId);
-  return Boolean(pane && pane.projectId === state.activeProjectId);
+  const place = project?.name ?? displayPath(session.folder).split(/[\\/]/).filter(Boolean).at(-1) ?? '';
+  return session.title ? `${place} · ${session.title}` : place;
 }
 
 const iconCache = new Map<string, Promise<string | null>>();
@@ -161,7 +153,7 @@ export function notifyWorkers(transitions: { worker: WorkerLike; kind: Attention
   }
 }
 
-function openTarget(target: string) {
+export function openTarget(target: string) {
   const state = useAppStore.getState();
   const [kind, id] = target.split(':');
   if (kind === 'worker') { state.setSection('orchestrator'); return; }
@@ -178,6 +170,8 @@ export function useAgentNotifications() {
   useEffect(() => {
     if (!isTauri()) return;
     const attention = listen<AttentionEvent>('agent-attention', ({ payload }) => {
+      // "working" only moves the live status; it is never announced.
+      if ((payload.kind as string) === 'working') return;
       const session = useAppStore.getState().sessions.find((item) => item.id === payload.sessionId);
       if (!session || sessionOnScreen(session)) return;
       const { title, body } = attentionText(session.agent, payload.kind, payload.message, sessionPlace(session));

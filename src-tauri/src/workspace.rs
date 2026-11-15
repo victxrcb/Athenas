@@ -63,6 +63,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
         && version != 6
         && version != 7
         && version != 8
+        && version != 9
     {
         return Err(format!("Versão de banco não suportada: {version}"));
     }
@@ -117,6 +118,17 @@ fn migrate(connection: &Connection) -> Result<(), String> {
         connection.execute_batch("BEGIN;
             ALTER TABLE projects ADD COLUMN repo_url TEXT;
             PRAGMA user_version = 8;
+            COMMIT;").map_err(|e| e.to_string())?;
+    }
+    if version < 9 {
+        // Session titles, per-project launch recipes and prompts scheduled for a later time.
+        connection.execute_batch("BEGIN;
+            ALTER TABLE sessions ADD COLUMN title TEXT;
+            ALTER TABLE projects ADD COLUMN recipe TEXT;
+            CREATE TABLE scheduled_prompts (id TEXT PRIMARY KEY, target TEXT NOT NULL, session_id TEXT, agent TEXT NOT NULL,
+                folder TEXT NOT NULL, label TEXT NOT NULL, text TEXT NOT NULL, run_at INTEGER NOT NULL, repeat TEXT NOT NULL DEFAULT 'none',
+                status TEXT NOT NULL DEFAULT 'pending', last_error TEXT, last_run_at INTEGER, created_at INTEGER NOT NULL);
+            PRAGMA user_version = 9;
             COMMIT;").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -596,7 +608,7 @@ mod tests {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         connection
             .execute("INSERT INTO groups (id, name) VALUES ('g1', 'Equipe')", [])
             .unwrap();

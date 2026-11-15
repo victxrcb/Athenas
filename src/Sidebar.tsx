@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { ChevronRight, Code2, Copy, FolderOpen, GitBranch, Home, MoreHorizontal, Network, Pencil, Plus, Plug, RotateCcw, Search, Settings2, Sparkles, Trash2, Workflow, X } from 'lucide-react';
+import { ChevronRight, Code2, Copy, FolderOpen, GitBranch, History, Home, Inbox, MoreHorizontal, Network, Pencil, Plus, Plug, RotateCcw, Search, Settings2, Sparkles, Trash2, Workflow, X } from 'lucide-react';
 import logo from './assets/brand/ui-logo.png';
 import { AgentIcon } from './AgentIcon';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -12,11 +12,32 @@ import { confirmAction } from './confirm';
 import { SIDEBAR_ITEMS, useSidebarPrefs } from './sidebarPrefs';
 import { deleteSession } from './panes';
 import { displayPath, sameFolder } from './path';
-import { StatusDot, sessionStatus } from './status';
+import { StatusDot } from './status';
+import { SessionName, useLiveStatus } from './SessionName';
+import { useInboxItems } from './inbox';
 import { useAppStore, type MemorySnapshot, type ProjectInfo, type Section, type SessionInfo, type WorkspaceSnapshot } from './store';
 
 const memoryLabel = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 const folderName = (folder: string) => folder.split(/[\\/]/).filter(Boolean).pop() ?? folder;
+
+/** Name, live status and folder of a session row; double-click the name to rename it. */
+function SessionRowLabel({ session, nested }: { session: SessionInfo; nested: boolean }) {
+  const info = useLiveStatus(session);
+  return <>
+    <AgentIcon agent={session.agent} size={14} />
+    <span className="session-name"><SessionName session={session} /><small>{nested ? info.label : folderName(session.folder)}</small></span>
+    <StatusDot info={info} />
+  </>;
+}
+
+/** Inbox entry with the number of things waiting; amber when one of them is a decision. */
+function InboxNavItem({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const items = useInboxItems();
+  const decisions = items.filter((item) => item.kind === 'approval').length;
+  return <NavItem icon={<Inbox size={15} />} label="Caixa de entrada" active={active} onClick={onClick}
+    hint={items.length ? `${items.length} pendência(s)${decisions ? ` · ${decisions} aguardando decisão` : ''}` : 'Nada pendente'}
+    badge={items.length ? <span className={`nav-badge ${decisions ? 'attention' : 'live'}`} aria-label={`${items.length} pendências`}>{items.length}</span> : undefined} />;
+}
 
 function NavItem({ icon, label, active, onClick, badge, hint }: { icon: ReactNode; label: string; active: boolean; onClick: () => void; badge?: ReactNode; hint?: string }) {
   return <button className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined} title={hint} onClick={onClick}>
@@ -57,7 +78,7 @@ export function Sidebar() {
 
   const resume = async (session: SessionInfo) => {
     try {
-      const resumed = await invoke<SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, paneId: session.paneId, resume: true, cols: 100, rows: 30 });
+      const resumed = await invoke<SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, paneId: session.paneId, resume: true, cols: 100, rows: 30, title: session.title ?? null });
       upsertSession(resumed); setSection('home'); setActiveSessionId(resumed.id);
     } catch (error) { setNotice(String(error)); }
   };
@@ -70,13 +91,10 @@ export function Sidebar() {
   };
 
   const sessionRow = (session: SessionInfo, nested: boolean) => {
-    const info = sessionStatus(session.status);
     const selected = activeSessionId === session.id && section === 'home';
     return <div className={`session-row ${nested ? 'nested' : ''}`} key={session.id}>
       <button className={selected ? 'selected' : ''} aria-current={selected ? 'true' : undefined} onClick={() => openSessionView(session)} title={displayPath(session.folder)}>
-        <AgentIcon agent={session.agent} size={14} />
-        <span className="session-name">{session.agent}<small>{nested ? info.label : folderName(session.folder)}</small></span>
-        <StatusDot info={info} />
+        <SessionRowLabel session={session} nested={nested} />
       </button>
       <div className="row-actions">
         {session.status !== 'rodando' && session.agent !== 'Shell' && <button className="row-action" aria-label="Retomar sessão" title="Retomar" onClick={() => void resume(session)}><RotateCcw size={12} /></button>}
@@ -126,6 +144,8 @@ export function Sidebar() {
     </div>
     {SIDEBAR_ITEMS.some((item) => navPrefs.items[item.id]) && <nav className="sidebar-nav" aria-label="Navegação principal">
       {navPrefs.items.home && <NavItem icon={<Home size={15} />} label="Início" active={homeActive} onClick={goHome} />}
+      {navPrefs.items.inbox && <InboxNavItem active={section === 'inbox'} onClick={() => goSection('inbox')} />}
+      {navPrefs.items.history && <NavItem icon={<History size={15} />} label="Histórico" active={section === 'history'} onClick={() => goSection('history')} />}
       {navPrefs.items.orchestrator && <NavItem icon={<Network size={15} />} label="Orquestração" active={section === 'orchestrator'} onClick={() => goSection('orchestrator')}
         hint={`${workerSummary.active} worker(s) em execução · ${workerSummary.waiting} precisando de atenção`}
         badge={workerSummary.waiting > 0 ? <span className="nav-badge attention" aria-label={`${workerSummary.waiting} aguardando`}>{workerSummary.waiting}</span>

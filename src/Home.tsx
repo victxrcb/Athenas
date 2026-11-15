@@ -8,7 +8,8 @@ import { AgentIcon } from './AgentIcon';
 import { SelectField } from './Select';
 import { chooseFolder } from './folder';
 import { displayPath, sameFolder } from './path';
-import { StatusBadge, sessionStatus } from './status';
+import { sessionLabel } from './activity';
+import { LiveBadge } from './SessionName';
 import { useAppStore, type Agent, type Mode, type SessionInfo } from './store';
 
 const agentOptions: Agent[] = ['Claude Code', 'Codex', 'Shell'];
@@ -111,8 +112,8 @@ export function Home() {
           <div className="section-head"><h2>Agentes em execução</h2><span>{live.length} ativo(s)</span></div>
           {live.length ? <div className="home-list">{live.slice(0, 5).map((session) => <button className="home-row" key={session.id} onClick={() => { state.setSection('home'); state.setActiveProjectId(null); state.setActiveSessionId(session.id); }}>
             <span className="home-row-icon"><AgentIcon agent={session.agent} size={16} /></span>
-            <div className="home-row-text"><strong>{session.agent}</strong><small>{displayPath(session.folder)}</small></div>
-            <StatusBadge info={sessionStatus(session.status)} />
+            <div className="home-row-text"><strong>{sessionLabel(session)}</strong><small>{session.title ? `${session.agent} · ` : ''}{displayPath(session.folder)}</small></div>
+            <LiveBadge session={session} />
           </button>)}</div> : <div className="empty-state compact"><span className="home-row-icon"><Terminal size={16} /></span><div><strong>Nenhum agente rodando.</strong><p>Envie um comando acima ou abra um terminal para começar.</p></div></div>}
         </section>
       </div>

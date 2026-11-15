@@ -14,14 +14,27 @@ import { displayPath } from './path';
 import { terminalPalette } from './themes';
 import { useAppStore, type SessionInfo } from './store';
 import { AgentIcon } from './AgentIcon';
-import { StatusBadge, sessionStatus } from './status';
-import { Power, Search } from 'lucide-react';
+import { createInputTracker } from './activity';
+import { LiveBadge, SessionName } from './SessionName';
+import { CalendarClock, Globe, Power, Search } from 'lucide-react';
+import { useScheduleStore } from './schedule';
+import { useActivityStore } from './activity';
 
 type OutputEvent = { id: string; sequence: number; data: string };
 
 function decode(data: string): Uint8Array {
   const binary = atob(data);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+/** Dev servers this terminal printed (`http://localhost:5173`): one click opens the latest in the browser. */
+function LocalUrls({ sessionId }: { sessionId: string }) {
+  const urls = useActivityStore((state) => state.urls[sessionId]);
+  const latest = urls?.at(-1);
+  if (!latest) return null;
+  const label = latest.replace(/^https?:\/\//, '');
+  return <button className="button-ghost button-sm local-url" title={urls.length > 1 ? `Abrir ${latest} (também: ${urls.slice(0, -1).join(', ')})` : `Abrir ${latest} no navegador`}
+    onClick={() => { void invoke('open_local_url', { url: latest }).catch((reason) => useAppStore.getState().setNotice(String(reason))); }}><Globe size={13} /> <span>{label}</span></button>;
 }
 
 export function TerminalView({ session, onStatus }: { session: SessionInfo; onStatus: (session: SessionInfo) => void }) {
@@ -93,7 +106,8 @@ export function TerminalView({ session, onStatus }: { session: SessionInfo; onSt
       replaying = false;
       outputQueue.sort((a, b) => a.sequence - b.sequence).forEach(writeChunk);
     }).catch((reason) => setError(String(reason)));
-    const input = terminal.onData((data) => { void invoke('terminal_write', { id: session.id, data }).catch((reason) => setError(String(reason))); });
+    const track = createInputTracker(session);
+    const input = terminal.onData((data) => { track(data); void invoke('terminal_write', { id: session.id, data }).catch((reason) => setError(String(reason))); });
     const resize = new ResizeObserver(() => {
       safeFit();
       void invoke('terminal_resize', { id: session.id, cols: terminal.cols, rows: terminal.rows }).catch(() => undefined);
@@ -108,7 +122,7 @@ export function TerminalView({ session, onStatus }: { session: SessionInfo; onSt
   }, [session.id, onStatus, fontSize]);
 
   return <div className="terminal-view">
-    <div className="terminal-toolbar"><div className="terminal-title"><AgentIcon agent={session.agent} size={14} /><strong>{session.agent}</strong><span title={displayPath(session.folder)}>{displayPath(session.folder)}</span></div><div className="terminal-tools"><StatusBadge info={sessionStatus(session.status)} /><button className="button-ghost button-sm" aria-pressed={searchOpen} aria-label="Buscar" title="Buscar (Ctrl F)" onClick={() => setSearchOpen(!searchOpen)}><Search size={13} /> <span className="tool-label">Buscar</span> <kbd>Ctrl F</kbd></button><button className="button-ghost button-sm danger" aria-label="Encerrar processo" title="Encerrar processo" onClick={() => { void confirmAction('Encerrar este processo?').then((ok) => ok ? invoke('terminal_stop', { id: session.id }) : undefined).catch((reason) => setError(String(reason))); }}><Power size={13} /> <span className="tool-label">Encerrar</span></button></div></div>
+    <div className="terminal-toolbar"><div className="terminal-title"><AgentIcon agent={session.agent} size={14} /><strong><SessionName session={session} /></strong><span title={displayPath(session.folder)}>{displayPath(session.folder)}</span></div><div className="terminal-tools"><LiveBadge session={session} /><LocalUrls sessionId={session.id} /><button className="button-ghost button-sm" aria-label="Agendar prompt" title="Agendar prompt para este agente" onClick={() => useScheduleStore.getState().open({ target: 'session', sessionId: session.id })}><CalendarClock size={13} /> <span className="tool-label">Agendar</span></button><button className="button-ghost button-sm" aria-pressed={searchOpen} aria-label="Buscar" title="Buscar (Ctrl F)" onClick={() => setSearchOpen(!searchOpen)}><Search size={13} /> <span className="tool-label">Buscar</span> <kbd>Ctrl F</kbd></button><button className="button-ghost button-sm danger" aria-label="Encerrar processo" title="Encerrar processo" onClick={() => { void confirmAction('Encerrar este processo?').then((ok) => ok ? invoke('terminal_stop', { id: session.id }) : undefined).catch((reason) => setError(String(reason))); }}><Power size={13} /> <span className="tool-label">Encerrar</span></button></div></div>
     {searchOpen && <div className="terminal-search"><input autoFocus aria-label="Buscar no terminal" placeholder="Buscar no terminal" value={query} onChange={(event) => { setQuery(event.target.value); search.current?.findNext(event.target.value); }} onKeyDown={(event) => { if (event.key === 'Enter') search.current?.findNext(query); if (event.key === 'Escape') setSearchOpen(false); }} /><button className="button-ghost button-sm" onClick={() => setSearchOpen(false)}>Fechar</button></div>}
     <div ref={host} className="terminal-canvas" onPaste={(event) => { void pasteImage(event); }} />
     {error && <div className="terminal-error" role="alert">{error}</div>}

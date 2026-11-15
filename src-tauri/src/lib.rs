@@ -3,6 +3,7 @@ pub mod links;
 mod mcp_config;
 pub mod notify;
 pub mod orchestrator;
+mod schedule;
 mod settings;
 mod skills;
 mod spotify;
@@ -79,6 +80,9 @@ pub fn run() {
                 .map_err(std::io::Error::other)?;
             orchestrator.start();
             app.manage(orchestrator);
+            let scheduler = schedule::Scheduler::new(&app.handle()).map_err(std::io::Error::other)?;
+            scheduler.start(app.handle().clone());
+            app.manage(scheduler);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -90,6 +94,9 @@ pub fn run() {
             terminal::terminal_stop,
             terminal::terminal_delete,
             terminal::terminal_set_pane,
+            terminal::terminal_rename,
+            terminal::terminal_auto_title,
+            notify::open_local_url,
             terminal::group_metrics,
             usage::agent_quotas,
             spotify::spotify_status,
@@ -142,6 +149,11 @@ pub fn run() {
             orchestrator::orchestration_permission,
             orchestrator::orchestration_abort,
             notify::notify_show,
+            schedule::schedule_list,
+            schedule::schedule_create,
+            schedule::schedule_cancel,
+            schedule::schedule_delete,
+            schedule::schedule_run_now,
             settings::settings_get,
             settings::settings_save
         ])

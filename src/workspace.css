@@ -73,3 +73,14 @@
 .ended-card p { margin: 0; font-size: var(--fs-sm); color: var(--text-dim); }
 .ended-card small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-2xs) var(--font-mono); color: var(--text-muted); }
 .ended-card .button-primary { margin-top: var(--sp-4); }
+
+/* Endereço do servidor de desenvolvimento detectado na saída do terminal. */
+.terminal-tools .local-url { color: var(--st-running); font-family: var(--font-mono); font-size: var(--fs-2xs); }
+.terminal-tools .local-url:hover { color: var(--text); }
+
+/* Nome da sessão: duplo clique vira campo de edição. */
+.session-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-title-input { width: 150px; min-width: 0; height: 20px; padding: 0 6px; border: 1px solid var(--accent); border-radius: var(--r-xs); background: var(--surface-0); color: var(--text); font: inherit; font-size: inherit; outline: none; box-shadow: 0 0 0 2px var(--focus); }
+.pane-tabs button .session-title { max-width: 180px; }
+.app-tab .session-title { max-width: 220px; }
+.terminal-title strong .session-title { max-width: 260px; display: inline-block; vertical-align: bottom; }

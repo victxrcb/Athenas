@@ -28,6 +28,9 @@ pub struct SessionInfo {
     pub resume_id: Option<String>,
     pub pane_id: Option<String>,
     pub status: String,
+    /// Name shown in tabs; set by the user or taken from the first prompt.
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -84,7 +87,7 @@ impl TerminalState {
             }
         }
         let mut query = db
-            .prepare("SELECT id, agent, folder, command, resume_id, pane_id, status FROM sessions")
+            .prepare("SELECT id, agent, folder, command, resume_id, pane_id, status, title FROM sessions")
             .expect("cannot query sessions");
         let saved: Vec<SessionInfo> = query
             .query_map([], |row| {
@@ -96,6 +99,7 @@ impl TerminalState {
                     resume_id: row.get(4)?,
                     pane_id: row.get(5)?,
                     status: row.get(6)?,
+                    title: row.get(7)?,
                 })
             })
             .expect("cannot read sessions")
@@ -126,9 +130,9 @@ impl TerminalState {
         let deleted = self.deleted_sessions.lock().map_err(|e| e.to_string())?;
         if deleted.contains(&info.id) { return Ok(()); }
         self.db.lock().map_err(|e| e.to_string())?.execute(
-            "INSERT INTO sessions (id, agent, folder, command, resume_id, pane_id, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ON CONFLICT(id) DO UPDATE SET status=excluded.status, resume_id=excluded.resume_id, pane_id=excluded.pane_id",
-            params![info.id, info.agent, info.folder, info.command, info.resume_id, info.pane_id, info.status],
+            "INSERT INTO sessions (id, agent, folder, command, resume_id, pane_id, status, title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET status=excluded.status, resume_id=excluded.resume_id, pane_id=excluded.pane_id, title=excluded.title",
+            params![info.id, info.agent, info.folder, info.command, info.resume_id, info.pane_id, info.status, info.title],
         ).map_err(|e| e.to_string())?;
         let mut saved = self.saved.lock().map_err(|e| e.to_string())?;
         if let Some(previous) = saved.iter_mut().find(|item| item.id == info.id) {
@@ -241,8 +245,13 @@ pub fn terminal_start(
     initial_prompt: Option<String>,
     cols: u16,
     rows: u16,
+    title: Option<String>,
 ) -> Result<SessionInfo, String> {
     let folder = valid_folder(&folder)?;
+    let title = match title {
+        Some(value) => clean_title(&value)?,
+        None => None,
+    };
     if let Some(pane) = &pane_id {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         let pane_folder: String = db
@@ -344,10 +353,15 @@ pub fn terminal_start(
         Some(value)
     } else if agent == "Codex" {
         builder.args(crate::notify::CODEX_NOTIFY_ARGS);
+        // A known thread id resumes that conversation directly; without it Codex opens its picker.
+        let thread = resume_id.filter(|value| uuid::Uuid::parse_str(value).is_ok());
         if resume {
             builder.arg("resume");
+            if let Some(thread) = &thread {
+                builder.arg(thread);
+            }
         }
-        None
+        thread
     } else {
         None
     };
@@ -365,6 +379,13 @@ pub fn terminal_start(
     drop(pair.slave);
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    // A resumed conversation keeps the name it had; a new one is named after its first prompt.
+    let title = title
+        .or_else(|| {
+            let previous = resume_id.as_ref()?;
+            state.saved.lock().ok()?.iter().rev().find(|item| item.resume_id.as_ref() == Some(previous)).and_then(|item| item.title.clone())
+        })
+        .or_else(|| initial_prompt.as_deref().filter(|_| !resume).and_then(title_from_prompt));
     let info = SessionInfo {
         id: session_id,
         agent,
@@ -373,6 +394,7 @@ pub fn terminal_start(
         resume_id,
         pane_id,
         status: "rodando".into(),
+        title,
     };
     let pid = child.process_id();
     state.update(info.clone())?;
@@ -394,6 +416,7 @@ pub fn terminal_start(
     let app_output = app.clone();
     let log_preferences = preferences.inner().clone();
     let mut notifications = (info.agent == "Codex").then(crate::notify::OscScanner::default);
+    let mut local_urls = crate::notify::LocalUrlScanner::default();
     let (sender, receiver) = mpsc::sync_channel::<Vec<u8>>(64);
     thread::spawn(move || {
         let mut reader = reader;
@@ -429,6 +452,9 @@ pub fn terminal_start(
                 for message in scanner.feed(&batch) {
                     crate::notify::emit_codex(&app_output, &id, &message);
                 }
+            }
+            for url in local_urls.feed(&batch) {
+                let _ = app_output.emit("session-url", crate::notify::SessionUrl { session_id: id.clone(), url });
             }
             sequence += 1;
             let _ = app_output.emit(
@@ -468,6 +494,27 @@ pub fn terminal_write(
     data: String,
 ) -> Result<(), String> {
     write_session(&state, &id, &data)
+}
+
+/// The running session that should receive input meant for `id`: the session itself, or, when it ended,
+/// a running session that resumed the same conversation. Returns its id and agent.
+pub fn running_target(state: &TerminalState, id: &str) -> Option<(String, String)> {
+    let sessions = state.sessions.lock().ok()?;
+    if let Some(running) = sessions.get(id) {
+        let info = running.lock().ok()?.info.clone();
+        return (info.status == "rodando").then_some((info.id, info.agent));
+    }
+    let saved = state.saved.lock().ok()?;
+    let conversation = saved.iter().find(|item| item.id == id)?.resume_id.clone()?;
+    sessions.values().find_map(|running| {
+        let info = running.lock().ok()?.info.clone();
+        (info.status == "rodando" && info.resume_id.as_ref() == Some(&conversation)).then_some((info.id, info.agent))
+    })
+}
+
+/// Name and agent of a known session, for labels.
+pub fn session_summary(state: &TerminalState, id: &str) -> Option<SessionInfo> {
+    state.saved.lock().ok()?.iter().find(|item| item.id == id).cloned()
 }
 
 /// Writes raw input into a running session's PTY (used by the UI and by agent-to-agent messages).
@@ -643,6 +690,90 @@ pub fn terminal_set_pane(
     }
     state.update(info.clone())?;
     Ok(info)
+}
+
+const MAX_TITLE: usize = 60;
+
+/// Trims a user-chosen name; empty clears it.
+fn clean_title(value: &str) -> Result<Option<String>, String> {
+    let value = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.chars().count() > MAX_TITLE || value.chars().any(char::is_control) {
+        return Err(format!("O nome precisa ter até {MAX_TITLE} caracteres."));
+    }
+    Ok(Some(value))
+}
+
+/// A short name from the first line of a prompt; slash commands and tiny inputs give none.
+pub fn title_from_prompt(prompt: &str) -> Option<String> {
+    let cleaned = prompt.replace("\x1b[200~", "").replace("\x1b[201~", "");
+    let line = cleaned.lines().map(str::trim).find(|line| !line.is_empty())?;
+    // Messages delivered by Athenas start with a bracketed header; name the session after the content.
+    let line = match line.strip_prefix("[Athenas") {
+        Some(rest) => rest.split_once(']').map(|(_, text)| text.trim()).unwrap_or(""),
+        None => line,
+    };
+    if line.starts_with('/') || line.starts_with('!') || line.chars().count() < 4 {
+        return None;
+    }
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let mut title = String::new();
+    for word in words {
+        let next = if title.is_empty() { word.to_string() } else { format!("{title} {word}") };
+        if next.chars().count() > 48 {
+            if title.is_empty() {
+                title = word.chars().take(47).collect();
+            }
+            title.push('…');
+            return Some(title);
+        }
+        title = next;
+    }
+    Some(title)
+}
+
+fn set_title(app: &AppHandle, id: &str, title: Option<String>, only_if_empty: bool) -> Result<Option<SessionInfo>, String> {
+    let state = app.state::<TerminalState>();
+    let mut info = match state.saved.lock().map_err(|e| e.to_string())?.iter().find(|item| item.id == id).cloned() {
+        Some(info) => info,
+        None => return Ok(None),
+    };
+    if only_if_empty && info.title.is_some() {
+        return Ok(None);
+    }
+    info.title = title;
+    if let Some(running) = state.sessions.lock().map_err(|e| e.to_string())?.get(id).cloned() {
+        let mut running = running.lock().map_err(|e| e.to_string())?;
+        running.info.title = info.title.clone();
+        // The live record also carries the latest status; keep it.
+        info.status = running.info.status.clone();
+    }
+    state.update(info.clone())?;
+    let _ = app.emit("terminal-status", info.clone());
+    Ok(Some(info))
+}
+
+/// Names a session after its first prompt unless it already has a name.
+pub fn auto_title(app: &AppHandle, id: &str, prompt: &str) {
+    if let Some(title) = title_from_prompt(prompt) {
+        let _ = set_title(app, id, Some(title), true);
+    }
+}
+
+#[tauri::command]
+pub fn terminal_rename(app: AppHandle, id: String, title: String) -> Result<SessionInfo, String> {
+    set_title(&app, &id, clean_title(&title)?, false)?.ok_or_else(|| "Sessão não encontrada.".into())
+}
+
+#[tauri::command]
+pub fn terminal_auto_title(app: AppHandle, id: String, prompt: String) -> Result<(), String> {
+    if prompt.len() > 32_000 {
+        return Ok(());
+    }
+    auto_title(&app, &id, &prompt);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1030,6 +1161,21 @@ mod tests {
         let _ = child.wait();
         suspended.unwrap();
         resumed.unwrap();
+    }
+
+    #[test]
+    fn titles_come_from_the_first_meaningful_line() {
+        assert_eq!(title_from_prompt("
+  Corrija o bug do login
+mais detalhes").as_deref(), Some("Corrija o bug do login"));
+        assert_eq!(title_from_prompt("/init"), None);
+        assert_eq!(title_from_prompt("ok"), None);
+        assert_eq!(title_from_prompt("[Athenas] Rode os testes").as_deref(), Some("Rode os testes"));
+        let long = title_from_prompt(&"palavra ".repeat(20)).unwrap();
+        assert!(long.ends_with('…') && long.chars().count() <= 49);
+        assert_eq!(clean_title("  Meu   agente ").unwrap().as_deref(), Some("Meu agente"));
+        assert_eq!(clean_title("   ").unwrap(), None);
+        assert!(clean_title(&"x".repeat(61)).is_err());
     }
 
     #[test]

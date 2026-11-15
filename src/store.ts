@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export type Agent = 'Claude Code' | 'Codex' | 'Shell';
 export type Mode = 'Normal' | 'Plan' | 'Auto-aceitar';
-export type SessionInfo = { id: string; agent: Agent; folder: string; command: string; resumeId: string | null; paneId: string | null; status: string };
+export type SessionInfo = { id: string; agent: Agent; folder: string; command: string; resumeId: string | null; paneId: string | null; status: string; title?: string | null };
 export type GroupInfo = { id: string; name: string };
 export type ProjectInfo = { id: string; groupId: string | null; name: string; folder: string | null; layout: 'auto' | 'spotlight' | 'sidebar' | 'grid'; splitRatio: number; icon?: string | null; repoUrl?: string | null; updatedAt: number };
 export type PaneInfo = { id: string; projectId: string; position: number; pinned: boolean };
@@ -10,7 +10,7 @@ export type WorkspaceSnapshot = { groups: GroupInfo[]; projects: ProjectInfo[]; 
 export type AgentUsage = { agent: string; sessions: number; bytes: number; cpuPercent: number };
 export type MemorySnapshot = { totalBytes: number; appBytes: number; groups: { groupId: string; bytes: number; suspended: boolean }[]; agents: AgentUsage[] };
 export type Preferences = { claudeCommand: string; codexCommand: string; shellCommand: string; workerLimit: number; scrollbackMb: number; fontSize: number; reducedEffects: boolean };
-export type Section = 'home' | 'git' | 'mcp' | 'skills' | 'orchestrator' | 'mapping';
+export type Section = 'home' | 'git' | 'mcp' | 'skills' | 'orchestrator' | 'mapping' | 'inbox' | 'history';
 /** Live orchestrator counters shown in navigation; polled once by the app shell. */
 export type WorkerSummary = { active: number; waiting: number };
 
@@ -63,7 +63,10 @@ export const useAppStore = create<AppState>((set) => ({
   setWorkspace: (workspace) => set({ workspace }),
   setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
   setSessions: (sessions) => set({ sessions }),
-  upsertSession: (session) => set((state) => ({ sessions: [...state.sessions.filter((item) => item.id !== session.id), session] })),
+  // Updates keep the session's place in the list; new sessions go to the end.
+  upsertSession: (session) => set((state) => (state.sessions.some((item) => item.id === session.id)
+    ? { sessions: state.sessions.map((item) => (item.id === session.id ? session : item)) }
+    : { sessions: [...state.sessions, session] })),
   setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
   openSession: () => set({ sessionOpen: true, targetPaneId: null }),
   openSessionInPane: (targetPaneId) => set({ sessionOpen: true, targetPaneId }),

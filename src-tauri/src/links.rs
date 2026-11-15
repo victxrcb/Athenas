@@ -112,7 +112,7 @@ fn enqueue(connection: &Connection, from: Option<&str>, to: &str, text: &str) ->
 
 /// Text typed into a TUI agent: bracketed paste keeps line breaks inside one prompt, and the
 /// Enter is sent separately so the CLI submits instead of inserting a newline.
-fn paste_payload(agent: &str, text: &str) -> String {
+pub(crate) fn paste_payload(agent: &str, text: &str) -> String {
     if agent == "Shell" {
         text.replace("\r\n", "\n").replace('\n', "\r")
     } else {

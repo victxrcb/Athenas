@@ -1,0 +1,42 @@
+/* ============ Caixa de entrada e prompts agendados ============ */
+.inbox-section { display: grid; gap: 1px; overflow: hidden; background: var(--border); border: 1px solid var(--border); border-radius: var(--r-md); }
+.inbox-section.muted { opacity: .8; }
+.inbox-row, .schedule-row { position: relative; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: var(--sp-3) var(--sp-4); background: var(--surface-1); transition: background-color var(--dur) var(--ease); }
+.inbox-row:hover, .schedule-row:hover { background: var(--surface-2); }
+/* Faixa de cor à esquerda indica o tipo da pendência. */
+.inbox-row::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--tone, var(--border-strong)); }
+.inbox-icon { flex: none; display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--border); }
+.inbox-text { flex: 1; min-width: 0; display: grid; gap: 2px; text-align: left; }
+.inbox-open { padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.inbox-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.inbox-open:hover strong { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-strong); }
+.inbox-text p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--text-dim); }
+.inbox-text small { font-size: var(--fs-xs); color: var(--text-muted); }
+.inbox-error { color: var(--st-error); }
+.inbox-pill { flex: none; padding: 2px 8px; border-radius: var(--r-full); font-size: var(--fs-2xs); font-weight: 600; color: var(--tone, var(--text-dim)); background: color-mix(in srgb, var(--tone, var(--text-muted)) 14%, transparent); border: 1px solid color-mix(in srgb, var(--tone, var(--text-muted)) 30%, transparent); }
+.inbox-pill.approval { --tone: var(--st-waiting); }
+.inbox-pill.done, .inbox-pill.sent { --tone: var(--st-done); }
+.inbox-pill.error, .inbox-pill.failed { --tone: var(--st-error); }
+.inbox-pill.pending { --tone: var(--st-queued); }
+.inbox-pill.cancelled { --tone: var(--st-cancelled); }
+.inbox-actions { flex: none; display: flex; gap: 2px; opacity: .55; transition: opacity var(--dur) var(--ease); }
+.inbox-row:hover .inbox-actions, .schedule-row:hover .inbox-actions, .inbox-actions:focus-within { opacity: 1; }
+.inbox-empty { display: grid; justify-items: center; gap: 6px; padding: var(--sp-8) var(--sp-4); background: var(--surface-1); text-align: center; color: var(--text-muted); }
+.inbox-empty strong { color: var(--text); font-size: var(--fs-md); }
+.inbox-empty p { margin: 0; max-width: 460px; font-size: var(--fs-sm); }
+.inbox-empty.compact { padding: var(--sp-5) var(--sp-4); }
+.inbox-subheading { display: flex; align-items: baseline; justify-content: space-between; margin: var(--sp-6) 0 var(--sp-3); }
+.inbox-subheading h2 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-md); font-weight: 600; }
+.inbox-subheading span { font-size: var(--fs-xs); color: var(--text-muted); }
+.heading-actions .button-primary { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Modal de agendamento */
+.schedule-modal { width: min(560px, calc(100vw - 32px)); }
+.schedule-modal .section-kicker { display: inline-flex; align-items: center; gap: 6px; }
+.schedule-target { margin-bottom: var(--sp-4); }
+.schedule-text { width: 100%; min-height: 110px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface-0); color: var(--text); font: inherit; font-size: var(--fs-sm); line-height: var(--lh); }
+.schedule-text:focus-visible, .schedule-when input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+.schedule-when { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.schedule-when input { height: var(--control-lg); padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface-0); color: var(--text); font: inherit; font-size: var(--fs-sm); color-scheme: dark; }
+.schedule-hint { display: block; margin: 6px 0 0; font-size: var(--fs-xs); color: var(--text-muted); }
+p.schedule-hint { margin: 0; padding: 10px 12px; border: 1px dashed var(--border-strong); border-radius: var(--r-sm); }

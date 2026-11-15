@@ -14,20 +14,25 @@ import { toggleSidebarHidden, useSidebarPrefs } from './sidebarPrefs';
 import { Home } from './Home';
 import { chooseFolder } from './folder';
 import { RepoField } from './RepoField';
-import { StatusDot, sessionStatus } from './status';
+import { sessionStatus } from './status';
 import { useWorkerSummaryPolling } from './useWorkerSummary';
 import { useAgentNotifications } from './notifications';
+import { sessionLabel, useActivityTracking } from './activity';
+import { SessionChip } from './SessionName';
+import { ScheduleModal } from './ScheduleModal';
+import { useScheduleEvents } from './schedule';
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { lazy, Suspense } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { ArrowUpRight, ChevronDown, ChevronRight, FileText, GitBranch, Home as HomeIcon, Minus, Network, PanelLeftClose, PanelLeftOpen, Plug, Plus, Search, Sparkles, Square, Terminal, Workflow, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronRight, FileText, GitBranch, History, Home as HomeIcon, Inbox, Minus, Network, PanelLeftClose, PanelLeftOpen, Plug, Plus, Search, Sparkles, Square, Terminal, Workflow, X } from 'lucide-react';
 import logo from './assets/brand/ui-logo.png';
 import { Agent, Mode, useAppStore, type PaneInfo, type ProjectInfo, type Section, type SessionInfo, type WorkspaceSnapshot } from './store';
 const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ default: module.TerminalView })));
 const ToolsView = lazy(() => import('./ToolsView').then((module) => ({ default: module.ToolsView })));
 const OrchestratorView = lazy(() => import('./OrchestratorView').then((module) => ({ default: module.OrchestratorView })));
 const MappingView = lazy(() => import('./MappingView').then((module) => ({ default: module.MappingView })));
+const InboxView = lazy(() => import('./InboxView').then((module) => ({ default: module.InboxView })));
 const SettingsView = lazy(() => import('./SettingsView').then((module) => ({ default: module.SettingsView })));
 
 const agentOptions: Agent[] = ['Claude Code', 'Codex', 'Shell'];
@@ -38,6 +43,8 @@ const SECTION_TABS: Record<Exclude<Section, 'home'>, { label: string; icon: Reac
   git: { label: 'Git', icon: <GitBranch size={14} /> },
   mcp: { label: 'MCP', icon: <Plug size={14} /> },
   skills: { label: 'Skills', icon: <Sparkles size={14} /> },
+  inbox: { label: 'Caixa de entrada', icon: <Inbox size={14} /> },
+  history: { label: 'Histórico', icon: <History size={14} /> },
 };
 
 function WindowBar() {
@@ -58,7 +65,7 @@ function WindowBar() {
 function EndedSession({ session, onResume }: { session: SessionInfo; onResume: () => void }) {
   return <div className="terminal-ended"><div className="ended-card">
     <span className="ended-icon"><AgentIcon agent={session.agent} size={20} /></span>
-    <h2>{session.agent}</h2>
+    <h2>{sessionLabel(session)}</h2>
     <p>Esta sessão terminou ({sessionStatus(session.status).label.toLowerCase()}).</p>
     <small>{displayPath(session.folder)}</small>
     {session.agent !== 'Shell' && <button className="button-primary" onClick={onResume}>Retomar</button>}
@@ -173,7 +180,7 @@ function ProjectWorkspace({ project }: { project: ProjectInfo }) {
   const running = sessions.filter((session) => session.status === 'rodando').length;
   const resume = async (active: SessionInfo, paneId: string) => {
     try {
-      const resumed = await invoke<SessionInfo>('terminal_start', { agent: active.agent, folder: active.folder, command: active.command, resumeId: active.resumeId, paneId: active.paneId, resume: true, cols: 100, rows: 30 });
+      const resumed = await invoke<SessionInfo>('terminal_start', { agent: active.agent, folder: active.folder, command: active.command, resumeId: active.resumeId, paneId: active.paneId, resume: true, cols: 100, rows: 30, title: active.title ?? null });
       state.upsertSession(resumed); setActiveTabs((current) => ({ ...current, [paneId]: resumed.id }));
     } catch (error) { state.setNotice(String(error)); }
   };
@@ -182,7 +189,7 @@ function ProjectWorkspace({ project }: { project: ProjectInfo }) {
     const active = tabs.find((session) => session.id === activeTabs[pane.id]) ?? tabs[0];
     return <div className="project-pane" key={pane.id} onDragOver={(event) => { if (panes.some((item) => item.id === pane.id)) event.preventDefault(); }} onDrop={async (event) => { event.preventDefault(); const id = event.dataTransfer.getData('text/plain'); if (!id || !panes.some((item) => item.id === pane.id)) return; try { const moved = await invoke<SessionInfo>('terminal_set_pane', { id, paneId: pane.id }); state.upsertSession(moved); setActiveTabs((current) => ({ ...current, [pane.id]: id })); } catch (error) { state.setNotice(String(error)); } }}>
       <div className="pane-header">
-        <div className="pane-tabs">{tabs.map((session) => <button key={session.id} aria-current={active?.id === session.id ? 'true' : undefined} draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', session.id)} className={active?.id === session.id ? 'selected' : ''} onClick={() => setActiveTabs((current) => ({ ...current, [pane.id]: session.id }))}><AgentIcon agent={session.agent} size={12} />{session.agent}<StatusDot info={sessionStatus(session.status)} /></button>)}<button className="pane-add" aria-label="Nova sub-aba" title="Nova sub-aba" onClick={() => panes.some((item) => item.id === pane.id) ? state.openSessionInPane(pane.id) : state.openSession()}><Plus size={13} /></button></div>
+        <div className="pane-tabs">{tabs.map((session) => <button key={session.id} aria-current={active?.id === session.id ? 'true' : undefined} draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', session.id)} className={active?.id === session.id ? 'selected' : ''} onClick={() => setActiveTabs((current) => ({ ...current, [pane.id]: session.id }))}><SessionChip session={session} /></button>)}<button className="pane-add" aria-label="Nova sub-aba" title="Nova sub-aba" onClick={() => panes.some((item) => item.id === pane.id) ? state.openSessionInPane(pane.id) : state.openSession()}><Plus size={13} /></button></div>
         <PanelActions pane={pane} project={project} active={active} tabs={tabs} onActivate={(id) => setActiveTabs((current) => ({ ...current, [pane.id]: id }))} />
       </div>
       {active?.status === 'rodando'
@@ -214,7 +221,7 @@ function CommandPalette() {
     { label: 'Novo projeto', detail: 'Criar projeto', run: state.openProject },
     { label: 'Novo grupo', detail: 'Criar grupo', run: state.openGroup },
     ...state.workspace.projects.map((project) => ({ label: project.name, detail: `Projeto · ${displayPath(project.folder ?? '')}`, run: () => { state.setActiveSessionId(null); state.setActiveProjectId(project.id); } })),
-    ...state.sessions.map((session) => ({ label: session.agent, detail: `Terminal · ${displayPath(session.folder)}`, run: () => { state.setActiveProjectId(null); state.setActiveSessionId(session.id); } })),
+    ...state.sessions.map((session) => ({ label: sessionLabel(session), detail: `${session.agent} · ${displayPath(session.folder)}`, run: () => { state.setActiveProjectId(null); state.setActiveSessionId(session.id); } })),
   ].filter((item) => `${item.label} ${item.detail}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
   const run = (index: number) => { actions[index]?.run(); close(); };
   return <div className="palette-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><div className="palette" role="dialog" aria-modal="true" aria-label="Paleta de comandos"><div className="palette-search"><Search size={16} /><input autoFocus aria-label="Buscar comando" placeholder="Busque projetos, terminais ou ações…" value={query} onChange={(event) => { setQuery(event.target.value); setSelected(0); }} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setSelected(Math.min(selected + 1, actions.length - 1)); } if (event.key === 'ArrowUp') { event.preventDefault(); setSelected(Math.max(selected - 1, 0)); } if (event.key === 'Enter') { event.preventDefault(); run(selected); } }} /><kbd>Esc</kbd></div><div className="palette-results">{actions.length ? actions.map((item, index) => <button key={`${item.detail}-${index}`} className={selected === index ? 'selected' : ''} onMouseEnter={() => setSelected(index)} onClick={() => run(index)}><span>{item.label}<small>{item.detail}</small></span><ArrowUpRight size={14} /></button>) : <p>Nenhum resultado.</p>}</div><div className="palette-footer"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>↵</kbd> abrir</span></div></div></div>;
@@ -228,6 +235,8 @@ export function App() {
   useEffect(() => startUpdateChecks((message) => useAppStore.getState().setNotice(message)), []);
   useWorkerSummaryPolling();
   useAgentNotifications();
+  useActivityTracking();
+  useScheduleEvents();
   useEffect(() => { if (isTauri()) void invoke<import('./store').Preferences>('settings_get').then(state.setPreferences).catch((error) => state.setNotice(String(error))); }, [state.setPreferences, state.setNotice]);
   useEffect(() => { if (isTauri()) void invoke<SessionInfo[]>('terminal_list').then(state.setSessions).catch((error) => state.setNotice(String(error))); }, [state.setSessions, state.setNotice]);
   useEffect(() => { if (isTauri()) void invoke<WorkspaceSnapshot>('workspace_list').then(state.setWorkspace).catch((error) => state.setNotice(String(error))); }, [state.setWorkspace, state.setNotice]);
@@ -258,7 +267,7 @@ export function App() {
   const goHome = () => { state.setSection('home'); state.setActiveProjectId(null); state.setActiveSessionId(null); };
   const homeTabActive = state.section === 'home' && !activeSession && !activeProject;
   const resumeActive = async (session: SessionInfo) => {
-    try { const resumed = await invoke<SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, paneId: session.paneId, resume: true, cols: 100, rows: 30 }); state.upsertSession(resumed); state.setActiveSessionId(resumed.id); }
+    try { const resumed = await invoke<SessionInfo>('terminal_start', { agent: session.agent, folder: session.folder, command: session.command, resumeId: session.resumeId, paneId: session.paneId, resume: true, cols: 100, rows: 30, title: session.title ?? null }); state.upsertSession(resumed); state.setActiveSessionId(resumed.id); }
     catch (error) { state.setNotice(String(error)); }
   };
   return <div className="app-shell">
@@ -268,12 +277,13 @@ export function App() {
         <button className="tab-sidebar-toggle" aria-label={sidebar.hidden ? 'Mostrar barra lateral' : 'Ocultar barra lateral'} aria-pressed={!sidebar.hidden} title={`${sidebar.hidden ? 'Mostrar' : 'Ocultar'} barra lateral (Ctrl B)`} onClick={toggleSidebarHidden}>{sidebar.hidden ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}</button>
         <button className={`app-tab ${homeTabActive ? 'active' : ''}`} aria-current={homeTabActive ? 'page' : undefined} onClick={goHome}><HomeIcon size={14} /> Início {runningCount > 0 && <span className="tab-count" title={`${runningCount} sessão(ões) ativa(s)`}><i />{runningCount}</span>}</button>
         {state.section !== 'home' && <div className="app-tab active" aria-current="page">{SECTION_TABS[state.section].icon} {SECTION_TABS[state.section].label}<button className="tab-close" aria-label="Fechar aba" onClick={() => state.setSection('home')}><X size={12} /></button></div>}
-        {state.section === 'home' && activeSession && <div className="app-tab active" aria-current="page"><AgentIcon agent={activeSession.agent} size={13} /> {activeSession.agent}<StatusDot info={sessionStatus(activeSession.status)} /><button className="tab-close" aria-label="Ocultar terminal" onClick={() => state.setActiveSessionId(null)}><X size={12} /></button></div>}
+        {state.section === 'home' && activeSession && <div className="app-tab active" aria-current="page"><SessionChip session={activeSession} iconSize={13} /><button className="tab-close" aria-label="Ocultar terminal" onClick={() => state.setActiveSessionId(null)}><X size={12} /></button></div>}
         {state.section === 'home' && !activeSession && activeProject && <div className="app-tab active" aria-current="page"><ProjectIcon icon={activeProject.icon} size={13} /> {activeProject.name}<button className="tab-close" aria-label="Fechar projeto" onClick={() => state.setActiveProjectId(null)}><X size={12} /></button></div>}
         <button className="tab-plus" aria-label="Nova sessão" title="Nova sessão (Ctrl T)" onClick={state.openSession}><Plus size={15} /></button>
         <div className="tab-spacer" /><UsageBar />
       </div>
       {state.section === 'mapping' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><MappingView /></Suspense>
+        : state.section === 'inbox' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><InboxView /></Suspense>
         : state.section === 'orchestrator' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><OrchestratorView /></Suspense>
         : state.section !== 'home' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><ToolsView /></Suspense>
         : activeSession && activeSession.status === 'rodando' ? <Suspense fallback={<div className="terminal-loading">Carregando terminal…</div>}><TerminalView session={activeSession} onStatus={state.upsertSession} /></Suspense>
@@ -281,7 +291,7 @@ export function App() {
         : activeProject ? <ProjectWorkspace project={activeProject} />
         : <Home />}
     </main></div>
-    <SessionModal /><SmallModal kind="project" /><SmallModal kind="group" />
+    <SessionModal /><SmallModal kind="project" /><SmallModal kind="group" /><ScheduleModal />
     <Suspense fallback={null}><SettingsView /></Suspense>
     <ConfirmHost />
     <CommandPalette />

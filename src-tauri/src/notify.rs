@@ -58,6 +58,8 @@ pub fn classify_claude_hook(payload: &Value) -> Option<(&'static str, String)> {
     let message = payload.get("message").and_then(Value::as_str).unwrap_or("").to_string();
     match payload.get("hook_event_name").and_then(Value::as_str)? {
         "Stop" => Some(("done", String::new())),
+        // A prompt was sent: the agent is working again. The prompt text names untitled sessions.
+        "UserPromptSubmit" => Some(("working", payload.get("prompt").and_then(Value::as_str).unwrap_or("").to_string())),
         "Notification" => match payload.get("notification_type").and_then(Value::as_str) {
             Some("permission_prompt" | "elicitation_dialog") => Some(("approval", message)),
             Some(_) => None,
@@ -114,7 +116,7 @@ pub fn claude_hook_settings(data_dir: &Path) -> Result<PathBuf, String> {
         slash(&data_dir.join(EVENTS_FILE))
     );
     let hook = serde_json::json!([{ "hooks": [{ "type": "command", "command": command, "timeout": 10 }] }]);
-    let settings = serde_json::json!({ "hooks": { "Stop": hook, "Notification": hook } });
+    let settings = serde_json::json!({ "hooks": { "Stop": hook, "Notification": hook, "UserPromptSubmit": hook } });
     let path = data_dir.join("claude-hooks.json");
     let body = serde_json::to_vec_pretty(&settings).map_err(|e| e.to_string())?;
     if fs::read(&path).ok().as_deref() != Some(body.as_slice()) {
@@ -166,6 +168,78 @@ impl OscScanner {
     }
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionUrl {
+    pub session_id: String,
+    pub url: String,
+}
+
+/// Finds local dev-server addresses (`http://localhost:5173`) in terminal output, each reported once per session.
+#[derive(Default)]
+pub struct LocalUrlScanner {
+    tail: String,
+    seen: std::collections::HashSet<String>,
+}
+
+impl LocalUrlScanner {
+    pub fn feed(&mut self, bytes: &[u8]) -> Vec<String> {
+        if self.seen.len() >= 20 {
+            return Vec::new();
+        }
+        // Keep a little of the previous chunk so an address split between reads is still found.
+        let mut cleaned = crate::links::strip_ansi(&String::from_utf8_lossy(bytes));
+        // strip_ansi ends every line with a break; a chunk that stopped mid-line must stay open.
+        if !bytes.ends_with(b"\n") {
+            cleaned.truncate(cleaned.trim_end_matches('\n').len());
+        }
+        let text = format!("{}{}", self.tail, cleaned);
+        let mut found = Vec::new();
+        for (index, _) in text.match_indices("http") {
+            if let Some(url) = local_url_at(&text[index..]) {
+                if self.seen.insert(url.clone()) {
+                    found.push(url);
+                }
+            }
+        }
+        let keep = text.char_indices().rev().nth(63).map(|(index, _)| index).unwrap_or(0);
+        self.tail = text[keep..].to_string();
+        found
+    }
+}
+
+/// `http://localhost:5173/app` → `http://localhost:5173`; anything that is not a loopback port gives `None`.
+fn local_url_at(text: &str) -> Option<String> {
+    let rest = text.strip_prefix("https://").map(|rest| ("https", rest)).or_else(|| text.strip_prefix("http://").map(|rest| ("http", rest)))?;
+    let (scheme, rest) = rest;
+    let host_end = rest.find(|c: char| c == ':' || c == '/' || c.is_whitespace()).unwrap_or(rest.len());
+    let host = &rest[..host_end];
+    let host = match host {
+        "localhost" | "127.0.0.1" | "[::1]" => host,
+        "0.0.0.0" | "[::]" => "localhost",
+        _ => return None,
+    };
+    let port_text = rest[host_end..].strip_prefix(':')?;
+    let digits: String = port_text.chars().take_while(char::is_ascii_digit).collect();
+    let port: u16 = digits.parse().ok().filter(|port| *port > 0)?;
+    // The port must be followed by something: at the end of a chunk it may still be cut (`:517` of `:5173`).
+    if port_text.len() == digits.len() || port_text[digits.len()..].starts_with(|c: char| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    Some(format!("{scheme}://{host}:{port}"))
+}
+
+/// Opens a dev server found in a terminal; only loopback addresses are accepted.
+#[tauri::command]
+pub fn open_local_url(url: String) -> Result<(), String> {
+    if local_url_at(&format!("{url} ")).as_deref() != Some(url.as_str()) {
+        return Err("Endereço local inválido.".into());
+    }
+    let program = if cfg!(windows) { "explorer.exe" } else if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    std::process::Command::new(program).arg(&url).spawn().map_err(|e| format!("Falha ao abrir o navegador: {e}"))?;
+    Ok(())
+}
+
 fn notification_text(body: &str) -> Option<String> {
     if let Some(rest) = body.strip_prefix("9;") {
         // ConEmu reuses OSC 9 with numeric sub-commands (9;4 is the progress bar); those are not notifications.
@@ -205,6 +279,9 @@ pub fn start(app: AppHandle, data_dir: PathBuf) {
                 .unwrap_or_default();
             for (id, event) in events {
                 let _ = db.execute("DELETE FROM agent_events WHERE id=?1", [id]);
+                if event.kind == "working" && !event.message.is_empty() {
+                    crate::terminal::auto_title(&app, &event.session_id, &event.message);
+                }
                 let _ = app.emit("agent-attention", event);
             }
         }
@@ -307,6 +384,32 @@ mod tests {
         assert_eq!(classify_claude_hook(&idle), None);
         let legacy = serde_json::json!({ "hook_event_name": "Notification", "message": "Claude needs your permission to use Edit" });
         assert_eq!(classify_claude_hook(&legacy).map(|e| e.0), Some("approval"));
+    }
+
+    #[test]
+    fn prompt_submission_marks_the_agent_as_working() {
+        let submit = serde_json::json!({ "hook_event_name": "UserPromptSubmit", "prompt": "corrija o login" });
+        assert_eq!(classify_claude_hook(&submit), Some(("working", "corrija o login".to_string())));
+    }
+
+    #[test]
+    fn local_urls_are_found_once_and_across_chunks() {
+        let mut scanner = LocalUrlScanner::default();
+        assert_eq!(scanner.feed(b"  \x1b[32mLocal:\x1b[0m   http://localhost:5173/\n"), vec!["http://localhost:5173"]);
+        assert!(scanner.feed(b"again http://localhost:5173/\n").is_empty());
+        assert_eq!(scanner.feed(b"ready on http://127.0.0.1:30"), Vec::<String>::new());
+        assert_eq!(scanner.feed(b"00 (press q)\n"), vec!["http://127.0.0.1:3000"]);
+        assert_eq!(scanner.feed(b"listening at http://0.0.0.0:8080\n"), vec!["http://localhost:8080"]);
+        assert!(scanner.feed(b"docs https://example.com:443/x and http://localhost/\n").is_empty());
+    }
+
+    #[test]
+    fn only_loopback_urls_can_be_opened() {
+        assert_eq!(local_url_at("http://localhost:5173 "), Some("http://localhost:5173".into()));
+        assert_eq!(local_url_at("http://evil.com:80 "), None);
+        assert_eq!(local_url_at("http://localhost:99999 "), None);
+        assert!(open_local_url("http://localhost:5173@evil.com".into()).is_err());
+        assert!(open_local_url("https://example.com".into()).is_err());
     }
 
     #[test]

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { useAppStore } from './store';
 import { notifyWorkers, workerTransitions, type WorkerLike } from './notifications';
+import { useActivityStore } from './activity';
 
 /** Polls orchestrator workers across all projects so navigation can show live and pending counts. */
 export function useWorkerSummaryPolling() {
@@ -18,6 +19,7 @@ export function useWorkerSummaryPolling() {
           waiting: workers.filter((worker) => worker.status === 'awaiting_permission' || worker.status === 'interrupted').length,
         });
         notifyWorkers(workerTransitions(previous, workers));
+        useActivityStore.getState().setWorkers(workers);
         previous = new Map(workers.map((worker) => [worker.id, worker.status]));
       }).catch(() => undefined);
     };

@@ -6,7 +6,9 @@ import {
   RotateCcw, Scan, TerminalSquare, Unlink, Workflow, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { AgentIcon } from './AgentIcon';
-import { StatusBadge, StatusDot, sessionStatus } from './status';
+import { StatusBadge, StatusDot } from './status';
+import { sessionLabel } from './activity';
+import { useLiveStatus } from './SessionName';
 import { sameFolder } from './path';
 import { useAppStore, type ProjectInfo, type SessionInfo } from './store';
 import {
@@ -69,7 +71,7 @@ const AgentWindow = memo(function AgentWindow({
   const interaction = useRef<{
     kind: 'move' | 'resize'; startX: number; startY: number; node: MappingNode;
   } | null>(null);
-  const status = sessionStatus(session.status);
+  const status = useLiveStatus(session);
   const size = nodeDisplaySize(node, mode);
 
   const begin = (kind: 'move' | 'resize', event: React.PointerEvent<HTMLElement>) => {
@@ -114,7 +116,7 @@ const AgentWindow = memo(function AgentWindow({
     >
       <header className="architecture-drag" onPointerDown={(event) => begin('move', event)} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
         <span className="mapping-agent-icon"><AgentIcon agent={session.agent} size={17} /></span>
-        <div><strong>{session.agent}</strong><small>{project?.name ?? 'Sessão avulsa'}</small></div>
+        <div><strong>{sessionLabel(session)}</strong><small>{project?.name ?? 'Sessão avulsa'}</small></div>
         <StatusDot info={status} />
         <span onPointerDown={(event) => event.stopPropagation()}>{linkButton}</span>
       </header>
@@ -131,7 +133,7 @@ const AgentWindow = memo(function AgentWindow({
   >
     <header className="mapping-window-header" onPointerDown={(event) => begin('move', event)} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
       <span className="mapping-agent-icon"><AgentIcon agent={session.agent} size={15} /></span>
-      <div className="mapping-window-title"><strong>{session.agent}</strong><small>{project?.name ?? 'Sessão avulsa'}</small></div>
+      <div className="mapping-window-title"><strong>{sessionLabel(session)}</strong><small>{project?.name ?? 'Sessão avulsa'}</small></div>
       <StatusBadge info={status} />
       <div className="mapping-window-actions" onPointerDown={(event) => event.stopPropagation()}>
         {linkButton}

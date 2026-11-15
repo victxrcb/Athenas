@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ArrowLeftRight, Code2, History, Maximize2, PanelRight, Pin, RotateCcw, Trash2 } from 'lucide-react';
+import { sessionLabel } from './activity';
 import { useAppStore, type PaneInfo, type ProjectInfo, type SessionInfo, type WorkspaceSnapshot } from './store';
 
 export function PanelActions({ pane, project, active, tabs, onActivate }: {
@@ -27,7 +28,7 @@ export function PanelActions({ pane, project, active, tabs, onActivate }: {
     }
     const next = await invoke<SessionInfo>('terminal_start', { agent: active.agent, folder: active.folder,
       command: active.command, resumeId: active.resumeId, paneId: active.paneId,
-      resume: active.agent !== 'Shell', mode: 'Normal', initialPrompt: null, cols: 100, rows: 30 });
+      resume: active.agent !== 'Shell', mode: 'Normal', initialPrompt: null, cols: 100, rows: 30, title: active.title ?? null });
     state.upsertSession(next);
     onActivate(next.id);
   };
@@ -44,5 +45,5 @@ export function PanelActions({ pane, project, active, tabs, onActivate }: {
         if (!(await confirmAction(active ? 'Encerrar e excluir esta sessão e seu scrollback?' : 'Excluir este painel vazio?'))) return; if (active) { await deleteSession(active.id); }
         else state.setWorkspace(await invoke<WorkspaceSnapshot>('pane_delete', { id: pane.id })); });
     }}><Trash2 size={13} /></button>
-  </div>{historyOpen && <div className="panel-history"><strong>Sessões do painel</strong>{tabs.map((session) => <button key={session.id} onClick={() => { onActivate(session.id); setHistoryOpen(false); }}>{session.agent} · {session.status}</button>)}</div>}</div>;
+  </div>{historyOpen && <div className="panel-history"><strong>Sessões do painel</strong>{tabs.map((session) => <button key={session.id} onClick={() => { onActivate(session.id); setHistoryOpen(false); }}>{sessionLabel(session)} · {session.status}</button>)}</div>}</div>;
 }
