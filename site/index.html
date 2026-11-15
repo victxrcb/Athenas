@@ -14,8 +14,8 @@
   <meta name="twitter:card" content="summary_large_image">
   <link rel="preload" href="assets/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/cinzel-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="css/themes.css?v=0.1.18b">
-  <link rel="stylesheet" href="css/site.css?v=0.1.18b">
+  <link rel="stylesheet" href="css/themes.css?v=0.1.21">
+  <link rel="stylesheet" href="css/site.css?v=0.1.21">
   <script>
     // Aplica tema e idioma antes da pintura para evitar piscar.
     (function () {
@@ -29,7 +29,7 @@
       } catch (e) { /* armazenamento indisponível */ }
     })();
   </script>
-  <script src="js/site.js?v=0.1.18b" defer></script>
+  <script src="js/site.js?v=0.1.21" defer></script>
 </head>
 <body>
   <!-- Ícones de funcionalidades: Lucide (https://lucide.dev), licença ISC. -->
@@ -46,6 +46,7 @@
         <a href="#features" data-i18n="nav.features">Funcionalidades</a>
         <a href="#orchestration" data-i18n="nav.orchestration">Orquestração</a>
         <a href="#customize" data-i18n="nav.customize">Personalização</a>
+        <a href="#developer" data-i18n="nav.developer">Desenvolvedor</a>
       </nav>
       <div class="nav-actions">
         <div class="segmented lang-switch" role="group" aria-label="Idioma / Language">
@@ -344,13 +345,41 @@
         </div>
       </div>
     </section>
+    <!-- Desenvolvedor: dados do perfil público no GitHub, atualizados ao carregar (ver loadDeveloper em site.js). -->
+    <section class="section" id="developer">
+      <div class="container">
+        <div class="dev-card">
+          <a class="dev-avatar" href="https://github.com/victxrcb" aria-label="Perfil de Victor Castelo no GitHub">
+            <span class="dev-initials" aria-hidden="true">VC</span>
+            <img class="dev-photo" src="https://avatars.githubusercontent.com/u/102666697?v=4&amp;s=320" alt="Foto de Victor Castelo" data-i18n-alt="dev.photo" width="160" height="160" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">
+          </a>
+          <div class="dev-copy">
+            <p class="kicker mono" data-i18n="dev.kicker">// quem desenvolve</p>
+            <h2 class="dev-name">Victor Castelo</h2>
+            <p class="dev-role" data-i18n="dev.role">Criador e desenvolvedor do Athenas Agent</p>
+            <p class="dev-bio">DEV · Student</p>
+            <ul class="dev-meta mono">
+              <li><b class="dev-repos">22</b> <span data-i18n="dev.repos">repositórios públicos</span></li>
+              <li><span data-i18n="dev.since">no GitHub desde</span> <b class="dev-since">2022</b></li>
+            </ul>
+            <div class="cta-row">
+              <a class="button button-primary dev-github" href="https://github.com/victxrcb">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 .5A11.5 11.5 0 0 0 8.36 22.9c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.08 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+                <span>@victxrcb</span>
+              </a>
+              <a class="button button-quiet" href="https://github.com/victxrcb/Athenas" data-i18n="dev.code">Ver o código do Athenas</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="footer">
     <div class="container footer-inner">
       <a class="brand" href="#top"><img src="assets/icon.png" alt="" width="24" height="24"><span>ATHENAS <b>AGENT</b></span></a>
       <p data-i18n="footer.tagline">Feito para ideias que merecem espaço.</p>
-      <p class="mono footer-meta"><span data-i18n="footer.local">Local-first · sem conta · sem nuvem</span> · <a href="https://github.com/victxrcb/Athenas">GitHub</a></p>
+      <p class="mono footer-meta"><span data-i18n="footer.local">Local-first · sem conta · sem nuvem</span> · <span data-i18n="footer.by">por</span> <a href="#developer">Victor Castelo</a> · <a href="https://github.com/victxrcb/Athenas">GitHub</a></p>
     </div>
   </footer>
 

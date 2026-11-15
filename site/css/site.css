@@ -249,6 +249,28 @@ a[href="#video"].button:hover svg { transform: translateX(3px) scale(1.15); }
 .hero-downloads .button span { white-space: nowrap; }
 .download-dmg:hover svg, .download-appimage:hover svg { transform: translateY(2px) scale(1.08); }
 
+/* Desenvolvedor */
+.dev-card {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: clamp(24px, 4vw, 48px); align-items: center;
+  max-width: 920px; margin-inline: auto; padding: clamp(24px, 4vw, 44px); border-radius: 20px;
+  background: radial-gradient(520px 260px at 0% 0%, var(--glow), transparent 70%), var(--bg-1);
+  border: 1px solid var(--line-strong);
+}
+.dev-avatar { position: relative; display: grid; place-items: center; width: 160px; height: 160px; border-radius: 50%; overflow: hidden; text-decoration: none;
+  background: var(--bg-2); box-shadow: 0 0 0 1px var(--line-strong), 0 0 0 6px color-mix(in srgb, var(--gold) 14%, transparent), 0 24px 60px -24px rgba(0, 0, 0, .7);
+  transition: transform .5s var(--spring), box-shadow .3s; }
+.dev-avatar:hover { transform: scale(1.04); box-shadow: 0 0 0 1px var(--gold), 0 0 0 8px color-mix(in srgb, var(--gold) 22%, transparent), 0 24px 60px -24px rgba(0, 0, 0, .7); }
+.dev-initials { font: 700 44px/1 var(--font-brand); letter-spacing: .06em; color: var(--fg-dim); }
+.dev-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.dev-copy .kicker { margin-bottom: 10px; }
+.dev-name { margin: 0; font-size: clamp(30px, 4vw, 44px); letter-spacing: -.03em; line-height: 1.08; }
+.dev-role { margin: 8px 0 0; font-size: 17px; color: var(--gold); }
+.dev-bio { margin: 10px 0 0; font-size: 17px; color: var(--fg-dim); white-space: pre-line; }
+.dev-meta { display: flex; flex-wrap: wrap; gap: 6px 22px; list-style: none; padding: 0; margin: 18px 0 0; font-size: 13px; color: var(--fg-faint); }
+.dev-meta b { color: var(--fg); font-weight: 600; }
+.dev-copy .cta-row { justify-content: flex-start; margin-top: 24px; }
+.dev-github:hover svg { transform: rotate(0) scale(1.1); }
+
 /* Rodapé */
 .footer { border-top: 1px solid var(--line); padding: 40px 0 56px; }
 .footer-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 28px; }
@@ -378,6 +400,8 @@ html[data-vt] *, html[data-vt] *::before, html[data-vt] *::after { transition: n
   .steps { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 900px) {
+  .dev-card { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+  .dev-meta, .dev-copy .cta-row { justify-content: center; }
   .feature, .orch-grid, .custom-grid, .platforms { grid-template-columns: 1fr; }
   .feature.reverse .feature-copy { order: 0; }
 }

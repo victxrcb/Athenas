@@ -17,7 +17,7 @@
     'meta.title': 'Athenas Agent — your AI agents in a single panel',
     'meta.description': 'Open source desktop app to manage AI agents: Claude Code, Codex and real terminals organized into projects, with orchestration, Git, MCP and Skills.',
     skip: 'Skip to content',
-    'nav.video': 'Video', 'nav.features': 'Features', 'nav.orchestration': 'Orchestration', 'nav.customize': 'Customization', 'nav.download': 'Download',
+    'nav.video': 'Video', 'nav.features': 'Features', 'nav.orchestration': 'Orchestration', 'nav.customize': 'Customization', 'nav.developer': 'Developer', 'nav.download': 'Download',
     'hero.kicker': 'Open source · Windows · Local-first',
     'hero.title': 'Your AI agents<br><span class="accent">in a single panel.</span>',
     'hero.lead': 'Claude Code, Codex and real terminals organized into projects. Orchestrate workers, review diffs and make it all yours — no account, no cloud.',
@@ -57,7 +57,8 @@
     'dl.linux.r1': 'Ubuntu 22.04+, Debian 12+ or an equivalent distro (64-bit)', 'dl.linux.r2': 'WebKitGTK 4.1 (included in recent distros)', 'dl.linux.r3': '<b>Claude Code</b> and/or <b>Codex</b> CLI installed', 'dl.linux.r4': 'Agent notifications are Windows-only for now',
     'dl.gatekeeper': 'The app is not signed by Apple yet, so macOS blocks the first launch. Drag it to <b>Applications</b>, try to open it, then go to <b>System Settings → Privacy &amp; Security → Open Anyway</b>. If it says the app “is damaged”, run in Terminal: <code>xattr -cr "/Applications/Athenas Agent.app"</code>',
     'dl.linuxnote': 'AppImage: make it executable with <code>chmod +x Athenas*.AppImage</code> and open it. Install the .deb with <code>sudo apt install ./file.deb</code>. Automatic updates work with the AppImage; for the .deb, download new versions here.',
-    'footer.tagline': 'Made for ideas that deserve room.', 'footer.local': 'Local-first · no account · no cloud',
+    'footer.tagline': 'Made for ideas that deserve room.', 'footer.local': 'Local-first · no account · no cloud', 'footer.by': 'by',
+    'dev.kicker': '// who builds it', 'dev.role': 'Creator and developer of Athenas Agent', 'dev.repos': 'public repositories', 'dev.since': 'on GitHub since', 'dev.code': 'See the Athenas source', 'dev.photo': 'Photo of Victor Castelo',
     'alt.home': 'Home screen with running agents', 'alt.layouts': 'Terminal layout picker', 'alt.mapping': 'Mapping canvas with several agents', 'alt.git': 'Changes and diff in the built-in Git',
     'alt.mcp': 'MCP configuration editor', 'alt.usage': 'Claude Code usage quota', 'alt.orch': 'Orchestration board with workers', 'alt.diff': 'Diff of a finished worker', 'alt.theme': 'Home screen in the selected theme',
   };
@@ -311,6 +312,26 @@
       });
   }
 
+  // ---------- Desenvolvedor: perfil público do GitHub ----------
+  // O HTML já traz os dados atuais; aqui eles se atualizam se o perfil mudar. Sem a API, fica o que está no HTML.
+  function loadDeveloper() {
+    var card = document.getElementById('developer');
+    if (!card || !window.fetch) return;
+    fetch('https://api.github.com/users/victxrcb', { headers: { Accept: 'application/vnd.github+json' } })
+      .then(function (res) { if (!res.ok) throw new Error(res.status); return res.json(); })
+      .then(function (user) {
+        if (user.name) card.querySelector('.dev-name').textContent = user.name;
+        var bio = String(user.bio || '').split(/\r?\n/).map(function (line) { return line.trim(); }).filter(Boolean).join(' · ');
+        if (bio) card.querySelector('.dev-bio').textContent = bio;
+        if (typeof user.public_repos === 'number') card.querySelector('.dev-repos').textContent = user.public_repos;
+        var since = new Date(user.created_at);
+        if (!isNaN(since.getTime())) card.querySelector('.dev-since').textContent = since.getFullYear();
+        var photo = card.querySelector('.dev-photo');
+        if (photo && user.avatar_url) photo.src = user.avatar_url + (user.avatar_url.indexOf('?') >= 0 ? '&' : '?') + 's=320';
+      })
+      .catch(function () { /* mantém os dados do HTML */ });
+  }
+
   // ---------- Detalhes vivos ----------
   function liveCounters() {
     if (reduceMotion) return;
@@ -381,6 +402,7 @@
     button.addEventListener('click', function () { setVideo(button.dataset.video); });
   });
   loadRelease();
+  loadDeveloper();
   liveCounters();
   reveal();
   lightbox();
