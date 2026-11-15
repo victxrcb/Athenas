@@ -16,6 +16,7 @@ import { chooseFolder } from './folder';
 import { RepoField } from './RepoField';
 import { StatusDot, sessionStatus } from './status';
 import { useWorkerSummaryPolling } from './useWorkerSummary';
+import { useAgentNotifications } from './notifications';
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { lazy, Suspense } from 'react';
@@ -226,6 +227,7 @@ export function App() {
   useEffect(() => { applyTheme(loadTheme()); void applyZoom(loadZoom()).catch((error) => useAppStore.getState().setNotice(`Não foi possível aplicar o zoom: ${error}`)); }, []);
   useEffect(() => startUpdateChecks((message) => useAppStore.getState().setNotice(message)), []);
   useWorkerSummaryPolling();
+  useAgentNotifications();
   useEffect(() => { if (isTauri()) void invoke<import('./store').Preferences>('settings_get').then(state.setPreferences).catch((error) => state.setNotice(String(error))); }, [state.setPreferences, state.setNotice]);
   useEffect(() => { if (isTauri()) void invoke<SessionInfo[]>('terminal_list').then(state.setSessions).catch((error) => state.setNotice(String(error))); }, [state.setSessions, state.setNotice]);
   useEffect(() => { if (isTauri()) void invoke<WorkspaceSnapshot>('workspace_list').then(state.setWorkspace).catch((error) => state.setNotice(String(error))); }, [state.setWorkspace, state.setNotice]);

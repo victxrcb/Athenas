@@ -336,8 +336,14 @@ pub fn terminal_start(
             builder.arg("--session-id");
             builder.arg(&value);
         }
+        // Hooks that report "finished" and "needs approval" back to the app; a failure only costs notifications.
+        if let Ok(settings) = crate::notify::claude_hook_settings(&state.data_dir) {
+            builder.arg("--settings");
+            builder.arg(settings);
+        }
         Some(value)
     } else if agent == "Codex" {
+        builder.args(crate::notify::CODEX_NOTIFY_ARGS);
         if resume {
             builder.arg("resume");
         }
@@ -387,6 +393,7 @@ pub fn terminal_start(
     let id = info.id.clone();
     let app_output = app.clone();
     let log_preferences = preferences.inner().clone();
+    let mut notifications = (info.agent == "Codex").then(crate::notify::OscScanner::default);
     let (sender, receiver) = mpsc::sync_channel::<Vec<u8>>(64);
     thread::spawn(move || {
         let mut reader = reader;
@@ -418,6 +425,11 @@ pub fn terminal_start(
                 .map(|settings| settings.scrollback_mb * 1024 * 1024)
                 .unwrap_or(MAX_SCROLLBACK);
             let _ = write_scrollback(&path, &batch, limit);
+            if let Some(scanner) = notifications.as_mut() {
+                for message in scanner.feed(&batch) {
+                    crate::notify::emit_codex(&app_output, &id, &message);
+                }
+            }
             sequence += 1;
             let _ = app_output.emit(
                 "terminal-output",

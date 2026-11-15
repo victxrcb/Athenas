@@ -86,6 +86,24 @@ export const MASCOT_OUTFITS: { id: MascotOutfit; label: string; pixels: OutfitPi
 
 export const outfitPixels = (outfit: MascotOutfit): OutfitPixel[] => MASCOT_OUTFITS.find((item) => item.id === outfit)?.pixels ?? [];
 
+export type MascotPixel = { x: number; y: number; fill: string; opacity?: number; key: string };
+
+/** Every pixel of a configured mascot, already shifted so hats fit (y ≥ 0), in paint order. Shared by the SVG and the notification icon. */
+export function mascotPixels(config: MascotConfig): { rows: number; pixels: MascotPixel[] } {
+  const outfit = outfitPixels(config.outfit);
+  const hatHeight = Math.max(0, ...outfit.map(([, y]) => -y));
+  // A hat replaces the antennas; both would overlap above the head.
+  const antennas = config.antennas && hatHeight === 0;
+  const top = Math.max(antennas ? 2 : 0, hatHeight);
+  const pixels: MascotPixel[] = [];
+  MASCOT_BODY.forEach((row, y) => [...row].forEach((cell, x) => { if (cell === '#') pixels.push({ x, y: y + top, fill: config.color, key: `b${x}-${y}` }); }));
+  if (antennas) MASCOT_ANTENNA_PIXELS.forEach(([x, y]) => pixels.push({ x, y: y + top, fill: config.color, key: `a${x}-${y}` }));
+  if (config.blush) MASCOT_BLUSH_PIXELS.forEach(([x, y]) => pixels.push({ x, y: y + top, fill: '#fff', opacity: 0.35, key: `h${x}-${y}` }));
+  MASCOT_EYE_PIXELS[config.eyes].forEach(([x, y]) => pixels.push({ x, y: y + top, fill: '#10181a', key: `e${x}-${y}` }));
+  outfit.forEach(([x, y, fill], index) => pixels.push({ x, y: y + top, fill, key: `o${index}` }));
+  return { rows: MASCOT_BODY.length + top, pixels };
+}
+
 export function sanitizeMascot(value: unknown): MascotConfig {
   const raw = (value && typeof value === 'object' ? value : {}) as Partial<MascotConfig>;
   return {

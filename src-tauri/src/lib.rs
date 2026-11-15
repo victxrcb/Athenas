@@ -1,6 +1,7 @@
 mod git_tools;
 pub mod links;
 mod mcp_config;
+pub mod notify;
 pub mod orchestrator;
 mod settings;
 mod skills;
@@ -23,6 +24,7 @@ pub fn run() {
             app.manage(preferences.clone());
             app.manage(workspace::WorkspaceDb::new(&app.handle()).map_err(std::io::Error::other)?);
             app.manage(terminal::TerminalState::new(&app.handle()));
+            notify::start(app.handle().clone(), app.path().app_data_dir()?);
             let links = links::LinksDb::new(&app.handle()).map_err(std::io::Error::other)?;
             links.start(app.handle().clone());
             app.manage(links);
@@ -92,6 +94,7 @@ pub fn run() {
             orchestrator::orchestration_land,
             orchestrator::orchestration_permission,
             orchestrator::orchestration_abort,
+            notify::notify_show,
             settings::settings_get,
             settings::settings_save
         ])

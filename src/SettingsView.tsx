@@ -9,6 +9,7 @@ import { DEFAULT_FONT, FONT_PRESETS, applyFont, fontStack, isValidFontName, load
 import { SIDEBAR_ITEMS, setSidebarHidden, setSidebarItem, useSidebarPrefs } from './sidebarPrefs';
 import { DEFAULT_MASCOT, MASCOT_COLORS, MASCOT_EYES, MASCOT_OUTFITS, saveMascot, useMascot } from './mascot';
 import { MascotIcon } from './MascotIcon';
+import { setNotificationsEnabled, useNotificationsEnabled } from './notifications';
 
 export function SettingsView() {
   const { settingsOpen, setSettingsOpen, preferences, setPreferences, setNotice } = useAppStore();
@@ -18,6 +19,7 @@ export function SettingsView() {
   const [zoom, setZoom] = useState(loadZoom);
   const mascot = useMascot();
   const sidebarPrefs = useSidebarPrefs();
+  const notificationsEnabled = useNotificationsEnabled();
   const [font, setFont] = useState<FontChoice>(loadFont);
   const [customFont, setCustomFont] = useState(() => loadFont().custom);
   // Ctrl +/−/0 can change the zoom while settings are open; keep the control in sync.
@@ -90,6 +92,7 @@ export function SettingsView() {
             <small>Escolha os atalhos exibidos na navegação. Atalho para ocultar/mostrar: <kbd>Ctrl B</kbd></small>
           </div>
         </div>
+        <label className="settings-check"><input type="checkbox" checked={notificationsEnabled} onChange={(event) => setNotificationsEnabled(event.target.checked)} /> Notificar quando um agente terminar ou pedir aprovação</label>
         <label className="settings-check"><input type="checkbox" checked={draft.reducedEffects} onChange={(event) => setDraft((current) => ({ ...current, reducedEffects: event.target.checked }))} /> Fundo ASCII na tela inicial</label></div>
       <div className="modal-footer"><span /><div><button type="button" className="button-quiet" onClick={() => setSettingsOpen(false)}>Cancelar</button><button className="button-primary" disabled={saving}>Salvar</button></div></div>
     </form>
