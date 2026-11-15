@@ -12,8 +12,55 @@ mod workspace;
 
 use tauri::Manager;
 
+/// Apps opened from Finder or a desktop launcher get a minimal PATH, so `claude` and `codex` would not be
+/// found. Adopt the PATH of the user's login shell, plus the usual install folders as a fallback.
+#[cfg(not(windows))]
+fn inherit_login_path() {
+    use std::{process::{Command, Stdio}, time::{Duration, Instant}};
+    const MARK: &str = "__ATHENAS_PATH__";
+    let shell = std::env::var("SHELL").ok().filter(|value| !value.is_empty()).unwrap_or_else(|| "/bin/sh".into());
+    let login_path = Command::new(&shell)
+        .args(["-ilc", &format!("printf '{MARK}%s' \"$PATH\"")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()
+        .and_then(|mut child| {
+            // A slow or interactive shell profile must not block startup.
+            let started = Instant::now();
+            while matches!(child.try_wait(), Ok(None)) {
+                if started.elapsed() > Duration::from_secs(4) {
+                    let _ = child.kill();
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            let output = child.wait_with_output().ok()?;
+            let text = String::from_utf8_lossy(&output.stdout).into_owned();
+            text.rsplit_once(MARK).map(|(_, path)| path.trim().to_string())
+        })
+        .filter(|path| !path.is_empty());
+    let mut entries: Vec<String> = login_path
+        .or_else(|| std::env::var("PATH").ok())
+        .unwrap_or_default()
+        .split(':')
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_string)
+        .collect();
+    let home = std::env::var("HOME").unwrap_or_default();
+    for extra in [format!("{home}/.local/bin"), format!("{home}/.npm-global/bin"), "/opt/homebrew/bin".into(), "/usr/local/bin".into(), "/usr/bin".into(), "/bin".into()] {
+        if !entries.contains(&extra) {
+            entries.push(extra);
+        }
+    }
+    std::env::set_var("PATH", entries.join(":"));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(not(windows))]
+    inherit_login_path();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())

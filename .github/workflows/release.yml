@@ -4,7 +4,19 @@ on:
     tags: ['v*']
 jobs:
   release:
-    runs-on: windows-latest
+    strategy:
+      # Uma plataforma que falhar não deve impedir as outras de publicar.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ''
+          # Universal: um único .dmg para Mac Intel e Apple Silicon.
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'
+          - platform: ubuntu-22.04
+            args: ''
+    runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
     steps:
@@ -12,6 +24,13 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - name: Dependências do Linux
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       # Restaura o cache aquecido pelo workflow warm-cache na master.
       # Tags não compartilham cache entre si, então aqui só lemos.
       - uses: Swatinem/rust-cache@v2
@@ -30,3 +49,4 @@ jobs:
           releaseName: 'Athenas Agent ${{ github.ref_name }}'
           releaseDraft: false
           includeUpdaterJson: true
+          args: ${{ matrix.args }}

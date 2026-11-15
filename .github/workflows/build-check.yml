@@ -1,0 +1,44 @@
+name: build-check
+# Temporário: valida o build e os testes de macOS/Linux numa branch antes de publicar.
+on:
+  push:
+    branches: ['ci/multiplataforma']
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'
+          - platform: ubuntu-22.04
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - name: Dependências do Linux
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: tauri-check
+      - run: npm ci
+      - name: Testes Rust
+        working-directory: src-tauri
+        run: cargo test
+      - name: Instaladores
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build ${{ matrix.args }}
+      - name: Lista instaladores gerados
+        shell: bash
+        run: find src-tauri/target -path '*bundle*' -maxdepth 6 \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.tar.gz' -o -name '*.sig' \) -exec ls -la {} \;
