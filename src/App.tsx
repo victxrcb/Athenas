@@ -20,12 +20,14 @@ import { useAgentNotifications } from './notifications';
 import { sessionLabel, useActivityTracking } from './activity';
 import { SessionChip } from './SessionName';
 import { ScheduleModal } from './ScheduleModal';
+import { RecipeEditor } from './RecipeEditor';
+import { maybeAutostart, runRecipe } from './recipes';
 import { useScheduleEvents } from './schedule';
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { lazy, Suspense } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { ArrowUpRight, ChevronDown, ChevronRight, FileText, GitBranch, History, Home as HomeIcon, Inbox, Minus, Network, PanelLeftClose, PanelLeftOpen, Plug, Plus, Search, Sparkles, Square, Terminal, Workflow, X } from 'lucide-react';
+import { ArrowUpRight, BookOpen, ChevronDown, ChevronRight, FileText, GitBranch, History, Home as HomeIcon, Inbox, Minus, Network, PanelLeftClose, PanelLeftOpen, Play, Plug, Plus, Search, Sparkles, Square, Terminal, Workflow, X } from 'lucide-react';
 import logo from './assets/brand/ui-logo.png';
 import { Agent, Mode, useAppStore, type PaneInfo, type ProjectInfo, type Section, type SessionInfo, type WorkspaceSnapshot } from './store';
 const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ default: module.TerminalView })));
@@ -167,7 +169,11 @@ function ProjectWorkspace({ project }: { project: ProjectInfo }) {
   const [ratio, setRatio] = useState(project.splitRatio);
   const gridRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  const [recipeOpen, setRecipeOpen] = useState(false);
   useEffect(() => setRatio(project.splitRatio), [project.id, project.splitRatio]);
+  // A project with an autostart recipe opens its sessions the first time it is shown.
+  useEffect(() => maybeAutostart(project), [project.id]);
+  const startRecipe = () => { if (project.recipe) void runRecipe(project, project.recipe).catch((error) => state.setNotice(String(error))); };
   const pointerRatio = (event: React.PointerEvent<HTMLDivElement>) => {
     const rect = gridRef.current?.getBoundingClientRect();
     if (!rect) return ratio;
@@ -202,10 +208,10 @@ function ProjectWorkspace({ project }: { project: ProjectInfo }) {
   return <div className={`project-workspace layout-${project.layout}`}>
     <header>
       <div className="project-title"><span className="project-title-icon"><ProjectIcon icon={project.icon} size={16} /></span><h1>{project.name}</h1><p title={displayPath(project.folder ?? '')}>{displayPath(project.folder ?? '')}</p></div>
-      <div className="project-header-meta">{sessions.length > 0 && <span className={`meta-pill ${running ? 'live' : ''}`}>{running ? <><i />{running} ativo(s)</> : null}{running ? ' · ' : ''}{sessions.length} sessão(ões)</span>}<button className="button-primary button-sm" onClick={state.openSession}><Plus size={14} /> Novo agente</button></div>
+      <div className="project-header-meta">{sessions.length > 0 && <span className={`meta-pill ${running ? 'live' : ''}`}>{running ? <><i />{running} ativo(s)</> : null}{running ? ' · ' : ''}{sessions.length} sessão(ões)</span>}<button className="button-quiet button-sm" title={project.recipe ? `Receita: ${project.recipe.items.length} sessão(ões)${project.recipe.autostart ? ' · abre sozinha' : ''}` : 'Salvar um conjunto de sessões para abrir de uma vez'} onClick={() => setRecipeOpen(true)}><BookOpen size={14} /> Receita</button>{project.recipe && <button className="button-quiet button-sm" title="Abrir as sessões da receita" onClick={startRecipe}><Play size={13} /></button>}<button className="button-primary button-sm" onClick={state.openSession}><Plus size={14} /> Novo agente</button></div>{recipeOpen && <RecipeEditor project={project} onClose={() => setRecipeOpen(false)} />}
     </header>
     {allPanes.length === 0
-      ? <div className="project-empty"><span className="empty-icon"><Terminal size={22} /></span><h2>Nenhuma sessão neste projeto.</h2><p>Abra um agente na pasta do projeto para começar.</p><button className="button-primary" onClick={state.openSession}>Nova sessão</button></div>
+      ? <div className="project-empty"><span className="empty-icon"><Terminal size={22} /></span><h2>Nenhuma sessão neste projeto.</h2><p>{project.recipe ? `A receita deste projeto abre ${project.recipe.items.length} sessão(ões).` : 'Abra um agente na pasta do projeto para começar.'}</p><div className="project-empty-actions">{project.recipe && <button className="button-primary" onClick={startRecipe}><Play size={14} /> Abrir receita</button>}<button className={project.recipe ? 'button-quiet' : 'button-primary'} onClick={state.openSession}>Nova sessão</button>{!project.recipe && <button className="button-quiet" onClick={() => setRecipeOpen(true)}><BookOpen size={14} /> Criar receita</button>}</div></div>
       : <div className="project-main">{single && <div className="project-session-nav">{allPanes.map((pane) => <button key={pane.id} className={(spotlightId ?? allPanes[0]?.id) === pane.id ? 'selected' : ''} onClick={() => setSpotlightId(pane.id)}>Painel {pane.position + 1}<small>{paneSessions(pane.id).length} sub-abas</small></button>)}</div>}<div className="project-grid" ref={gridRef} style={project.layout === 'grid' && visible.length > 1 ? { gridTemplateColumns: `${Math.round(ratio * 100)}% ${Math.round((1 - ratio) * 100)}%` } : undefined}>{visible.map(renderPane)}{project.layout === 'grid' && visible.length > 1 && <div className="grid-divider" style={{ left: `${ratio * 100}%` }} role="separator" aria-label="Redimensionar painéis" onPointerDown={(event) => { dragging.current = true; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (dragging.current) pointerRatio(event); }} onPointerUp={(event) => { if (!dragging.current) return; dragging.current = false; const next = pointerRatio(event); void invoke<WorkspaceSnapshot>('project_set_split', { id: project.id, ratio: next }).then(state.setWorkspace).catch((error) => state.setNotice(String(error))); }} />}</div></div>}
   </div>;
 }

@@ -122,6 +122,7 @@ pub fn run() {
             workspace::project_update,
             workspace::project_delete,
             workspace::project_set_icon,
+            workspace::project_set_recipe,
             workspace::project_reveal,
             workspace::project_open_vscode,
             workspace::mapping_layout_get,

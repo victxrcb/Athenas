@@ -84,3 +84,17 @@
 .pane-tabs button .session-title { max-width: 180px; }
 .app-tab .session-title { max-width: 220px; }
 .terminal-title strong .session-title { max-width: 260px; display: inline-block; vertical-align: bottom; }
+
+/* Receita do projeto */
+.recipe-modal { width: min(720px, calc(100vw - 32px)); }
+.recipe-modal .section-kicker { display: inline-flex; align-items: center; gap: 6px; }
+.recipe-modal .modal-intro code { font-family: var(--font-mono); font-size: var(--fs-xs); padding: 1px 5px; border-radius: var(--r-xs); background: var(--surface-2); }
+.recipe-items { display: grid; gap: 8px; margin-bottom: var(--sp-3); }
+.recipe-item { display: grid; grid-template-columns: 160px 140px minmax(0, 1fr) 28px; gap: 8px; align-items: center; }
+.recipe-item input { height: var(--control-lg); min-width: 0; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface-0); color: var(--text); font: inherit; font-size: var(--fs-sm); }
+.recipe-item input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+.recipe-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: var(--sp-4); }
+.recipe-tools .button-sm, .project-empty-actions button, .project-header-meta .button-quiet { display: inline-flex; align-items: center; gap: 6px; }
+.recipe-autostart { margin-bottom: var(--sp-2); }
+.project-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.danger-text { color: var(--st-error); }
