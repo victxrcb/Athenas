@@ -78,7 +78,7 @@ body::before {
   translate: -110% 0; transition: translate .7s ease;
 }
 .button-primary:hover::after { translate: 110% 0; }
-.download-exe:hover svg { transform: translateY(2px) scale(1.08); }
+.download-exe:hover svg, .download-hero:hover svg { transform: translateY(2px) scale(1.08); }
 a[href="#video"].button:hover svg { transform: translateX(3px) scale(1.15); }
 .button-sm { min-height: 36px; padding: 0 14px; font-size: 14px; }
 .button-lg { min-height: 56px; padding: 0 26px; font-size: 16px; }
@@ -219,6 +219,11 @@ a[href="#video"].button:hover svg { transform: translateX(3px) scale(1.15); }
 .download-copy h2 { margin: 0; font-size: clamp(32px, 4.4vw, 50px); letter-spacing: -.03em; line-height: 1.08; }
 .download-copy > p:not(.kicker):not(.release-meta) { margin: 14px 0 0; color: var(--fg-dim); font-size: 18px; }
 .download-copy .cta-row { justify-content: flex-start; }
+.os-only[hidden] { display: none !important; }
+.os-switch { margin-top: 26px; }
+.os-switch + .cta-row { margin-top: 16px; }
+.download-dmg:hover svg, .download-appimage:hover svg { transform: translateY(2px) scale(1.08); }
+.note code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 13px; padding: 1px 5px; border-radius: 5px; background: var(--bg-2); border: 1px solid var(--line); overflow-wrap: anywhere; }
 .download-info h3 { margin: 0; font-size: 13px; font-weight: 500; color: var(--gold); text-transform: uppercase; letter-spacing: .08em; }
 .note { margin: 22px 0 0; padding: 14px 16px; border-radius: 10px; font-size: 14px; color: var(--fg-dim); background: color-mix(in srgb, var(--warning) 8%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--line)); }
 

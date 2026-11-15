@@ -51,6 +51,12 @@
     'dl.exe': 'Windows · installer', 'dl.msi': 'MSI package', 'dl.all': 'all releases', 'dl.req': 'Requirements',
     'dl.r1': 'Windows 10 or 11 (64-bit)', 'dl.r2': 'Microsoft Edge WebView2 (built into Windows 11)', 'dl.r3': '<b>Claude Code</b> and/or <b>Codex</b> CLI installed',
     'dl.smartscreen': 'The installer is not code-signed yet, so Windows SmartScreen may warn on first run. Click “More info” → “Run anyway”.',
+    'cta.mac': 'Download for macOS', 'cta.linux': 'Download for Linux', 'dl.os': 'Operating system',
+    'dl.dmg': 'macOS · Intel and Apple Silicon', 'dl.appimage': 'Linux · AppImage', 'dl.deb': 'Debian/Ubuntu package',
+    'dl.mac.r1': 'macOS 11 Big Sur or later (Intel or Apple Silicon)', 'dl.mac.r2': '<b>Claude Code</b> and/or <b>Codex</b> CLI installed', 'dl.mac.r3': 'Agent notifications are Windows-only for now',
+    'dl.linux.r1': 'Ubuntu 22.04+, Debian 12+ or an equivalent distro (64-bit)', 'dl.linux.r2': 'WebKitGTK 4.1 (included in recent distros)', 'dl.linux.r3': '<b>Claude Code</b> and/or <b>Codex</b> CLI installed', 'dl.linux.r4': 'Agent notifications are Windows-only for now',
+    'dl.gatekeeper': 'The app is not signed by Apple yet, so macOS blocks the first launch. Drag it to <b>Applications</b>, try to open it, then go to <b>System Settings → Privacy &amp; Security → Open Anyway</b>. If it says the app “is damaged”, run in Terminal: <code>xattr -cr "/Applications/Athenas Agent.app"</code>',
+    'dl.linuxnote': 'AppImage: make it executable with <code>chmod +x Athenas*.AppImage</code> and open it. Install the .deb with <code>sudo apt install ./file.deb</code>. Automatic updates work with the AppImage; for the .deb, download new versions here.',
     'footer.tagline': 'Made for ideas that deserve room.', 'footer.local': 'Local-first · no account · no cloud',
     'alt.home': 'Home screen with running agents', 'alt.layouts': 'Terminal layout picker', 'alt.mapping': 'Mapping canvas with several agents', 'alt.git': 'Changes and diff in the built-in Git',
     'alt.mcp': 'MCP configuration editor', 'alt.usage': 'Claude Code usage quota', 'alt.orch': 'Orchestration board with workers', 'alt.diff': 'Diff of a finished worker', 'alt.theme': 'Home screen in the selected theme',
@@ -256,19 +262,49 @@
   // ---------- Release mais recente ----------
   function formatSize(bytes) { return (bytes / 1048576).toFixed(1).replace('.', lang === 'en' ? '.' : ',') + ' MB'; }
 
+  // Instaladores por sistema: [classe do link, classe do tamanho, extensão exibida, padrão do arquivo].
+  var PACKAGES = [
+    ['download-exe', 'exe-size', '.exe', /-setup\.exe$/i],
+    ['download-msi', 'msi-size', '.msi', /\.msi$/i],
+    ['download-dmg', 'dmg-size', '.dmg', /\.dmg$/i],
+    ['download-appimage', 'appimage-size', '.AppImage', /\.AppImage$/i],
+    ['download-deb', 'deb-size', '.deb', /\.deb$/i],
+  ];
+  var PRIMARY = { windows: 'download-exe', mac: 'download-dmg', linux: 'download-appimage' };
+
+  function detectOs() {
+    var platform = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || '').toLowerCase();
+    if (/mac|iphone|ipad/.test(platform)) return 'mac';
+    if (/linux|x11|cros/.test(platform) && !/android/.test(navigator.userAgent.toLowerCase())) return 'linux';
+    return 'windows';
+  }
+  var os = detectOs();
+
+  /** Mostra os botões, requisitos e avisos do sistema escolhido; o botão do topo sempre segue o sistema detectado. */
+  function showOs(next) {
+    os = next;
+    document.querySelectorAll('.download-card .os-only').forEach(function (el) { el.hidden = el.dataset.os !== next; });
+    document.querySelectorAll('[data-os-pick]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.osPick === next)); });
+    syncThumbs();
+  }
+
+  function heroOs() {
+    var detected = detectOs();
+    document.querySelectorAll('.download-hero .os-only').forEach(function (el) { el.hidden = el.dataset.os !== detected; });
+    var primary = document.querySelector('.' + PRIMARY[detected]);
+    document.querySelectorAll('.download-hero').forEach(function (a) { a.href = primary ? primary.href : RELEASES; });
+  }
+
   function renderRelease() {
     if (!release) return;
-    var exe = release.assets.find(function (a) { return /-setup\.exe$/i.test(a.name); });
-    var msi = release.assets.find(function (a) { return /\.msi$/i.test(a.name); });
     document.querySelectorAll('.release-version').forEach(function (el) { el.textContent = release.tag_name; });
-    if (exe) {
-      document.querySelectorAll('.download-exe').forEach(function (a) { a.href = exe.browser_download_url; });
-      document.querySelectorAll('.exe-size').forEach(function (el) { el.textContent = '.exe · ' + formatSize(exe.size); });
-    }
-    if (msi) {
-      document.querySelectorAll('.download-msi').forEach(function (a) { a.href = msi.browser_download_url; });
-      document.querySelectorAll('.msi-size').forEach(function (el) { el.textContent = '.msi · ' + formatSize(msi.size); });
-    }
+    PACKAGES.forEach(function (item) {
+      var asset = release.assets.find(function (a) { return item[3].test(a.name); });
+      if (!asset) return;
+      document.querySelectorAll('.' + item[0]).forEach(function (a) { a.href = asset.browser_download_url; });
+      document.querySelectorAll('.' + item[1]).forEach(function (el) { el.textContent = item[2] + ' · ' + formatSize(asset.size); });
+    });
+    heroOs();
     var date = new Date(release.published_at);
     if (!isNaN(date.getTime())) {
       var label = new Intl.DateTimeFormat(lang === 'en' ? 'en-US' : 'pt-BR', { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
@@ -283,7 +319,7 @@
       .then(function (res) { if (!res.ok) throw new Error(res.status); return res.json(); })
       .then(function (data) { if (data && Array.isArray(data.assets)) { release = data; renderRelease(); } })
       .catch(function () {
-        document.querySelectorAll('.download-exe, .download-msi').forEach(function (a) { a.href = RELEASES; });
+        document.querySelectorAll('.download-hero, .download-exe, .download-msi, .download-dmg, .download-appimage, .download-deb').forEach(function (a) { a.href = RELEASES; });
       });
   }
 
@@ -348,7 +384,12 @@
   applyTheme(root.dataset.theme || 'preto-branco', false);
   if (lang === 'en') applyLang('en');
   setVideo(lang, true);
+  showOs(os);
+  heroOs();
   setupThumbs();
+  document.querySelectorAll('[data-os-pick]').forEach(function (button) {
+    button.addEventListener('click', function () { showOs(button.dataset.osPick); });
+  });
   document.querySelectorAll('[data-lang]').forEach(function (button) {
     button.addEventListener('click', function () { switchLang(button.dataset.lang); });
   });

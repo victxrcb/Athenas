@@ -78,7 +78,9 @@ pub fn git_trust_folder(folder: String) -> Result<(), String> {
 }
 
 fn file_pathspec(file: &str) -> Result<String, String> {
-    let path = Path::new(file);
+    // Normalize first: on macOS/Linux `..\x` is one harmless component until it becomes `../x`.
+    let normalized = file.replace('\\', "/");
+    let path = Path::new(&normalized);
     if path.as_os_str().is_empty()
         || path
             .components()
@@ -89,7 +91,7 @@ fn file_pathspec(file: &str) -> Result<String, String> {
     if file.contains('\0') {
         return Err("Caminho de arquivo inválido.".into());
     }
-    Ok(format!(":(literal){}", file.replace('\\', "/")))
+    Ok(format!(":(literal){normalized}"))
 }
 
 #[tauri::command]
@@ -676,7 +678,13 @@ mod tests {
     #[test]
     fn git_commands_stage_commit_and_show_diff_without_path_traversal() {
         assert!(file_pathspec("../outside.txt").is_err());
+        assert!(file_pathspec("..\\outside.txt").is_err());
+        assert!(file_pathspec("dir\\..\\..\\outside.txt").is_err());
+        assert!(file_pathspec("/outside.txt").is_err());
+        // A drive letter is only absolute on Windows; elsewhere `C:` is an ordinary folder name.
+        #[cfg(windows)]
         assert!(file_pathspec("C:/outside.txt").is_err());
+        assert_eq!(file_pathspec("src\\main.rs").unwrap(), ":(literal)src/main.rs");
         let directory = std::env::temp_dir().join(format!("athenas-git-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&directory).unwrap();
         git(&directory, &["init", "-q"]).unwrap();
