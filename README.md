@@ -4,7 +4,7 @@ App desktop local para organizar agentes de código em grupos e projetos, com te
 
 ## Rodar
 
-Requer Node.js, Rust estável e as dependências do Tauri 2 para Windows (WebView2 e ferramentas C++).
+Requer Node.js, Rust estável e os [pré-requisitos do Tauri 2](https://v2.tauri.app/start/prerequisites/) do seu sistema: WebView2 e ferramentas C++ no Windows, Xcode Command Line Tools no macOS, WebKitGTK 4.1 no Linux.
 
 ```powershell
 npm.cmd install
@@ -19,7 +19,7 @@ npm.cmd run app
 npm.cmd run tauri -- build
 ```
 
-Gera NSIS e MSI em `src-tauri/target/release/bundle/`. Métricas e metas em [docs/F5.md](docs/F5.md).
+Gera em `src-tauri/target/release/bundle/`: NSIS e MSI no Windows, `.app` e `.dmg` no macOS, AppImage e `.deb` no Linux. Métricas e metas em [docs/F5.md](docs/F5.md).
 
 A arte de origem é de um item de terceiros do Steam Workshop. Revise os direitos antes de distribuir publicamente.
 
