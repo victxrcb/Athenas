@@ -1,6 +1,6 @@
 // Gera os assets da página a partir do material do vídeo de divulgação.
-// Uso (na raiz do repositório): node site/scripts/build-assets.mjs [--skip-video]
-// Requer: promo/video/public/shots/*.png (node promo/capture/capture.mjs) e promo/out/*.mp4.
+// Uso (na raiz do repositório): node site/scripts/build-assets.mjs [--skip-video | --only-video]
+// Requer: promo/video/public/shots/*.png (node promo/capture/capture.mjs) e promo/out/athenas-agent-film.mp4.
 import sharp from 'sharp';
 import { copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -21,6 +21,9 @@ const MASCOTS = ['none', 'beach', 'halloween', 'christmas', 'party', 'formal', '
 
 const kb = (file) => `${Math.round(statSync(file).size / 1024)} KB`;
 
+const onlyVideo = process.argv.includes('--only-video');
+
+if (!onlyVideo) {
 for (const name of SCREENS) {
   const target = path.join(out, 'screens', `${name}.webp`);
   await sharp(path.join(shots, `${name}.png`)).resize({ width: name.startsWith('theme-home-') ? 1280 : 1920 }).webp({ quality: 84, effort: 6 }).toFile(target);
@@ -44,20 +47,21 @@ const FONTS = [
   ['jetbrains-mono', 'jetbrains-mono-latin-400-normal.woff2'], ['jetbrains-mono', 'jetbrains-mono-latin-500-normal.woff2'],
 ];
 for (const [pkg, file] of FONTS) copyFileSync(path.join(root, 'node_modules/@fontsource', pkg, 'files', file), path.join(out, 'fonts', file));
+}
 
 if (!process.argv.includes('--skip-video')) {
   const video = path.join(root, 'promo/video');
   const ffmpeg = (args) => execFileSync('npx', ['remotion', 'ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', ...args], { cwd: video, stdio: 'inherit', shell: true });
-  for (const [lang, source] of [['pt', 'athenas-agent-promo.mp4'], ['en', 'athenas-agent-promo-en.mp4']]) {
-    const input = path.join(root, 'promo/out', source);
-    if (!existsSync(input)) throw new Error(`Vídeo não encontrado: ${input}`);
-    const target = path.join(out, 'video', `athenas-${lang}.mp4`);
-    const crf = process.env.CRF ?? '27';
-    ffmpeg(['-i', input, '-c:v', 'libx264', '-crf', crf, '-preset', 'slow', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-c:a', 'aac', '-b:a', '128k', target]);
-    const poster = path.join(out, 'video', `poster-${lang}.png`);
-    ffmpeg(['-ss', '3.4', '-i', input, '-frames:v', '1', poster]);
-    await sharp(poster).webp({ quality: 82 }).toFile(poster.replace('.png', '.webp'));
-    execFileSync(process.execPath, ['-e', `require('fs').unlinkSync(${JSON.stringify(poster)})`]);
-    console.log('video', lang, kb(target));
-  }
+  // O product film (composição AthenasFilm), em português.
+  const input = path.join(root, 'promo/out/athenas-agent-film.mp4');
+  if (!existsSync(input)) throw new Error(`Vídeo não encontrado: ${input}`);
+  const target = path.join(out, 'video', 'athenas.mp4');
+  const crf = process.env.CRF ?? '23';
+  ffmpeg(['-i', input, '-c:v', 'libx264', '-crf', crf, '-preset', 'slow', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-c:a', 'aac', '-b:a', '160k', target]);
+  // Capa: a marca e a frase da abertura, já reveladas.
+  const poster = path.join(out, 'video', 'poster.png');
+  ffmpeg(['-ss', '5.0', '-i', input, '-frames:v', '1', poster]);
+  await sharp(poster).webp({ quality: 82 }).toFile(poster.replace('.png', '.webp'));
+  execFileSync(process.execPath, ['-e', `require('fs').unlinkSync(${JSON.stringify(poster)})`]);
+  console.log('video', kb(target));
 }

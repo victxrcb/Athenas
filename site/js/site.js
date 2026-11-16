@@ -25,7 +25,7 @@
     'hero.free': 'free', 'hero.source': 'source on GitHub',
     'status.running': 'running', 'status.waiting': 'waiting for you', 'status.done': 'done',
     'alt.hero': 'A project with four agents working side by side in Athenas Agent',
-    'video.kicker': 'overview', 'video.title': 'See Athenas in 90 seconds', 'video.lead': 'A tour of the features and the ways to customize the app.', 'video.subtitles': 'Subtitles',
+    'video.kicker': 'overview', 'video.title': 'See Athenas in 1 minute', 'video.lead': 'Agents, terminals, history, mapping, customization and Spotify. On-screen text in Portuguese.',
     'features.kicker': 'features', 'features.title': 'Everything you need to manage agents', 'features.lead': 'A native Windows app that brings sessions, projects and tools together.',
     'f1.title': 'Command center', 'f1.text': 'See every running agent, your recent projects and what needs your attention. Describe the task, pick the agent and go.',
     'f1.b1': 'Claude Code, Codex or Shell in any folder', 'f1.b2': 'Normal, Plan and Auto-accept modes', 'f1.b3': 'Sessions you can resume after closing the app',
@@ -118,7 +118,6 @@
     document.querySelectorAll('[data-lang]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.lang === next)); });
     syncThumbs();
     store.set('athenas-site-lang', next);
-    setVideo(next);
     if (reduceMotion) { applyLang(next); return; }
     root.classList.add('i18n-out');
     setTimeout(function () {
@@ -156,31 +155,6 @@
   // ---------- Vídeo ----------
   var video = document.getElementById('promo');
   var videoCard = video && video.closest('.video-card');
-  function setVideo(next, immediate) {
-    if (!video) return;
-    document.querySelectorAll('[data-video]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.video === next)); });
-    syncThumbs();
-    var src = 'assets/video/athenas-' + next + '.mp4';
-    if (video.getAttribute('src') === src) return;
-    var time = video.currentTime;
-    var playing = !video.paused && !video.ended;
-    var swap = function () {
-      video.poster = 'assets/video/poster-' + next + '.webp';
-      video.src = src;
-      if (time > 0) {
-        video.addEventListener('loadedmetadata', function restore() {
-          video.removeEventListener('loadedmetadata', restore);
-          video.currentTime = Math.min(time, video.duration || time);
-          if (playing) video.play().catch(function () { /* o navegador pode bloquear autoplay */ });
-        });
-        video.load();
-      }
-      if (videoCard) requestAnimationFrame(function () { videoCard.classList.remove('switching'); });
-    };
-    if (immediate || reduceMotion || !videoCard) { swap(); return; }
-    videoCard.classList.add('switching');
-    setTimeout(swap, 180);
-  }
   if (video && videoCard) {
     video.addEventListener('play', function () { videoCard.classList.add('playing'); });
     video.addEventListener('pause', function () { videoCard.classList.remove('playing'); });
@@ -392,14 +366,10 @@
   buildThemes();
   applyTheme(root.dataset.theme || 'preto-branco', false);
   if (lang === 'en') applyLang('en');
-  setVideo(lang, true);
   markOs();
   setupThumbs();
   document.querySelectorAll('[data-lang]').forEach(function (button) {
     button.addEventListener('click', function () { switchLang(button.dataset.lang); });
-  });
-  document.querySelectorAll('[data-video]').forEach(function (button) {
-    button.addEventListener('click', function () { setVideo(button.dataset.video); });
   });
   loadRelease();
   loadDeveloper();
