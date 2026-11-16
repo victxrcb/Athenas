@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SpotifyPlayer } from './SpotifyPlayer';
 
 const mock = vi.hoisted(() => ({
-  track: null as null | { title: string; artist: string; album: string; isPlaying: boolean },
+  track: null as null | { title: string; artist: string; album: string; isPlaying: boolean; artworkUrl?: string | null },
   invoke: vi.fn(),
 }));
 
@@ -38,5 +38,12 @@ describe('Spotify player', () => {
     await waitFor(() => expect(mock.invoke).toHaveBeenCalledWith('spotify_control', { action: 'next' }));
     fireEvent.click(screen.getByRole('button', { name: 'Música anterior' }));
     await waitFor(() => expect(mock.invoke).toHaveBeenCalledWith('spotify_control', { action: 'previous' }));
+  });
+
+  it('shows the Spotify album artwork when available', async () => {
+    mock.track = { title: 'Faixa', artist: 'Artista', album: 'Disco', isPlaying: true, artworkUrl: 'data:image/jpeg;base64,abc' };
+    mock.invoke.mockResolvedValue(mock.track);
+    render(<SpotifyPlayer />);
+    expect((await screen.findByAltText('')).getAttribute('src')).toBe('data:image/jpeg;base64,abc');
   });
 });

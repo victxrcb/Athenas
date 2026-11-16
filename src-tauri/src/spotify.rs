@@ -7,6 +7,7 @@ pub struct SpotifyTrack {
     artist: String,
     album: String,
     is_playing: bool,
+    artwork_url: Option<String>,
 }
 
 #[cfg(windows)]
@@ -17,6 +18,20 @@ mod platform {
         GlobalSystemMediaTransportControlsSessionManager as Manager,
         GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
     };
+    use windows::Storage::Streams::DataReader;
+    use windows::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties as MediaProperties;
+
+    fn artwork(properties: &MediaProperties) -> Option<String> {
+        let reference = properties.Thumbnail().ok()?;
+        let stream = reference.OpenReadAsync().ok()?.join().ok()?;
+        let size = stream.Size().ok()?.min(8 * 1024 * 1024) as u32;
+        if size == 0 { return None; }
+        let reader = DataReader::CreateDataReader(&stream).ok()?;
+        reader.LoadAsync(size).ok()?.join().ok()?;
+        let mut bytes = vec![0; size as usize];
+        reader.ReadBytes(&mut bytes).ok()?;
+        Some(format!("data:image/jpeg;base64,{}", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes)))
+    }
 
     fn spotify_source(source: &str) -> bool {
         source.to_ascii_lowercase().contains("spotify")
@@ -61,6 +76,7 @@ mod platform {
         let playback = session
             .GetPlaybackInfo()
             .map_err(|error| error.to_string())?;
+        let artwork_url = artwork(&properties);
         Ok(Some(SpotifyTrack {
             title: properties
                 .Title()
@@ -78,6 +94,7 @@ mod platform {
                 .PlaybackStatus()
                 .map_err(|error| error.to_string())?
                 == PlaybackStatus::Playing,
+            artwork_url,
         }))
     }
 
