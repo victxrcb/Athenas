@@ -30,12 +30,16 @@
 /* Pane header: session tabs + panel actions on one line */
 .pane-header { height: 34px; flex: none; display: flex; align-items: stretch; background: var(--surface-1); border-bottom: 1px solid var(--border); }
 .pane-tabs { flex: 1; min-width: 0; display: flex; align-items: stretch; overflow-x: auto; scrollbar-width: none; }
-.pane-tabs button { flex: none; display: flex; align-items: center; gap: 7px; padding: 0 12px; border: 0; border-right: 1px solid var(--border); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease); }
+.pane-tabs button { position: relative; flex: none; display: flex; align-items: center; gap: 7px; padding: 0 12px; border: 0; border-right: 1px solid var(--border); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); cursor: grab; transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease), opacity var(--dur-fast) var(--ease); }
 .pane-tabs button:hover { color: var(--text); }
+.pane-tabs button:active { cursor: grabbing; }
+.pane-tabs button.tab-dragging { opacity: .42; }
+.pane-tabs button.tab-drop-before { box-shadow: inset 2px 0 var(--focus); }
+.pane-tabs.tab-drop-end { box-shadow: inset -2px 0 var(--focus); }
 .pane-tabs button.selected { position: relative; background: var(--surface-0); color: var(--text); }
 .pane-tabs button.selected::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--surface-0); }
 .pane-tabs button.selected::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--accent); }
-.pane-tabs .pane-add { padding: 0 9px; color: var(--text-muted); }
+.pane-tabs .pane-add { padding: 0 9px; color: var(--text-muted); cursor: pointer; }
 .panel-action-wrap { position: relative; flex: none; }
 .panel-actions { height: 100%; display: flex; align-items: center; gap: 1px; padding: 0 6px; }
 .panel-actions button { width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-muted); transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }

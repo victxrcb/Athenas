@@ -1,9 +1,9 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { App } from './App';
 import { useAppStore } from './store';
 
-afterEach(() => { cleanup(); useAppStore.setState({ paletteOpen: false, section: 'home', sessionOpen: false, projectOpen: false, groupOpen: false, notice: null }); });
+afterEach(() => { cleanup(); localStorage.clear(); useAppStore.setState({ paletteOpen: false, section: 'home', sessionOpen: false, projectOpen: false, groupOpen: false, notice: null, sessions: [], activeSessionId: null, activeProjectId: null, workspace: { groups: [], projects: [], panes: [] } }); });
 
 describe('home', () => {
   it('opens the session dialog from the quick action', () => {
@@ -57,5 +57,40 @@ describe('home', () => {
     expect(screen.getByRole('button', { name: /Terminal/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Arquitetura/ })).toBeTruthy();
     expect(screen.getByLabelText('Minimapa')).toBeTruthy();
+  });
+
+  it('reorders terminal tabs by dragging and persists the chosen order', async () => {
+    useAppStore.setState({
+      activeProjectId: 'project-1',
+      sessions: [
+        { id: 'a', agent: 'Shell', folder: 'C:\\project', command: 'cmd', resumeId: null, paneId: 'pane-1', status: 'concluído', title: 'Primeira' },
+        { id: 'b', agent: 'Shell', folder: 'C:\\project', command: 'cmd', resumeId: null, paneId: 'pane-1', status: 'concluído', title: 'Segunda' },
+        { id: 'c', agent: 'Shell', folder: 'C:\\project', command: 'cmd', resumeId: null, paneId: 'pane-1', status: 'concluído', title: 'Terceira' },
+      ],
+      workspace: {
+        groups: [],
+        projects: [{ id: 'project-1', groupId: null, name: 'Projeto', folder: 'C:\\project', layout: 'auto', splitRatio: .5, updatedAt: 1 }],
+        panes: [{ id: 'pane-1', projectId: 'project-1', position: 0, pinned: false }],
+      },
+    });
+    const { container } = render(<App />);
+    const tabs = () => [...container.querySelectorAll<HTMLButtonElement>('.pane-tabs > button:not(.pane-add)')];
+    const data = new Map<string, string>();
+    const dataTransfer = { effectAllowed: 'none', dropEffect: 'none', setData: (type: string, value: string) => data.set(type, value), getData: (type: string) => data.get(type) ?? '' };
+    const [, second, third] = tabs();
+    second.getBoundingClientRect = () => ({ left: 0, width: 100, right: 100, top: 0, bottom: 34, height: 34, x: 0, y: 0, toJSON: () => ({}) });
+
+    fireEvent.dragStart(third, { dataTransfer });
+    expect(data.get('application/x-athenas-session')).toBe('c');
+    const dragOver = createEvent.dragOver(second, { dataTransfer });
+    Object.defineProperty(dragOver, 'clientX', { value: 10 });
+    fireEvent(second, dragOver);
+    const drop = createEvent.drop(second, { dataTransfer });
+    Object.defineProperty(drop, 'clientX', { value: 10 });
+    fireEvent(second, drop);
+
+    await waitFor(() => expect(localStorage.getItem('athenas-terminal-tab-order')).not.toBeNull());
+    expect(JSON.parse(localStorage.getItem('athenas-terminal-tab-order') ?? '{}')).toEqual({ 'pane-1': ['a', 'c', 'b'] });
+    await waitFor(() => expect(tabs().map((tab) => tab.textContent)).toEqual(['Primeira', 'Terceira', 'Segunda']));
   });
 });

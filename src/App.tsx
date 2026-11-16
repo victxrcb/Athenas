@@ -23,6 +23,7 @@ import { ScheduleModal } from './ScheduleModal';
 import { RecipeEditor } from './RecipeEditor';
 import { maybeAutostart, runRecipe } from './recipes';
 import { useScheduleEvents } from './schedule';
+import { loadTabOrder, moveTab, saveTabOrder, sortTabs } from './tabOrder';
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { lazy, Suspense } from 'react';
@@ -166,6 +167,9 @@ function ProjectWorkspace({ project }: { project: ProjectInfo }) {
   const allPanes = [...panes, ...legacy];
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
   const [activeTabs, setActiveTabs] = useState<Record<string, string>>({});
+  const [tabOrder, setTabOrder] = useState(loadTabOrder);
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ paneId: string; beforeId: string | null } | null>(null);
   const [ratio, setRatio] = useState(project.splitRatio);
   const gridRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -183,7 +187,7 @@ function ProjectWorkspace({ project }: { project: ProjectInfo }) {
   };
   const single = project.layout === 'spotlight' || project.layout === 'sidebar';
   const visible = single ? allPanes.filter((pane) => pane.id === (spotlightId ?? allPanes[0]?.id)) : allPanes;
-  const paneSessions = (id: string) => sessions.filter((session) => session.paneId === id || (!session.paneId && session.id === id));
+  const paneSessions = (id: string) => sortTabs(tabOrder, id, sessions.filter((session) => session.paneId === id || (!session.paneId && session.id === id)));
   const running = sessions.filter((session) => session.status === 'rodando').length;
   const resume = async (active: SessionInfo, paneId: string) => {
     try {
@@ -191,12 +195,33 @@ function ProjectWorkspace({ project }: { project: ProjectInfo }) {
       state.upsertSession(resumed); setActiveTabs((current) => ({ ...current, [paneId]: resumed.id }));
     } catch (error) { state.setNotice(String(error)); }
   };
+  const dropTab = async (event: React.DragEvent, pane: PaneInfo, beforeId: string | null) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = event.dataTransfer.getData('application/x-athenas-session') || event.dataTransfer.getData('text/plain');
+    const dragged = sessions.find((session) => session.id === id);
+    if (!dragged || !panes.some((item) => item.id === pane.id)) return;
+    const targetTabIds = paneSessions(pane.id).map((session) => session.id);
+    try {
+      if (dragged.paneId !== pane.id) {
+        const moved = await invoke<SessionInfo>('terminal_set_pane', { id, paneId: pane.id });
+        state.upsertSession(moved);
+      }
+      setTabOrder((current) => {
+        const next = moveTab(current, id, pane.id, targetTabIds, beforeId);
+        saveTabOrder(next);
+        return next;
+      });
+      setActiveTabs((current) => ({ ...current, [pane.id]: id }));
+    } catch (error) { state.setNotice(String(error)); }
+    finally { setDraggedTabId(null); setDropTarget(null); }
+  };
   const renderPane = (pane: PaneInfo) => {
     const tabs = paneSessions(pane.id);
     const active = tabs.find((session) => session.id === activeTabs[pane.id]) ?? tabs[0];
-    return <div className="project-pane" key={pane.id} onDragOver={(event) => { if (panes.some((item) => item.id === pane.id)) event.preventDefault(); }} onDrop={async (event) => { event.preventDefault(); const id = event.dataTransfer.getData('text/plain'); if (!id || !panes.some((item) => item.id === pane.id)) return; try { const moved = await invoke<SessionInfo>('terminal_set_pane', { id, paneId: pane.id }); state.upsertSession(moved); setActiveTabs((current) => ({ ...current, [pane.id]: id })); } catch (error) { state.setNotice(String(error)); } }}>
+    return <div className="project-pane" key={pane.id} onDragOver={(event) => { if (draggedTabId && panes.some((item) => item.id === pane.id)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropTarget({ paneId: pane.id, beforeId: null }); } }} onDrop={(event) => void dropTab(event, pane, null)}>
       <div className="pane-header">
-        <div className="pane-tabs">{tabs.map((session) => <button key={session.id} aria-current={active?.id === session.id ? 'true' : undefined} draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', session.id)} className={active?.id === session.id ? 'selected' : ''} onClick={() => setActiveTabs((current) => ({ ...current, [pane.id]: session.id }))}><SessionChip session={session} /></button>)}<button className="pane-add" aria-label="Nova sub-aba" title="Nova sub-aba" onClick={() => panes.some((item) => item.id === pane.id) ? state.openSessionInPane(pane.id) : state.openSession()}><Plus size={13} /></button></div>
+        <div className={`pane-tabs ${dropTarget?.paneId === pane.id && dropTarget.beforeId === null ? 'tab-drop-end' : ''}`}>{tabs.map((session, index) => <button key={session.id} aria-current={active?.id === session.id ? 'true' : undefined} draggable title="Arraste para reorganizar ou mover para outro painel" onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-athenas-session', session.id); event.dataTransfer.setData('text/plain', session.id); setDraggedTabId(session.id); }} onDragEnd={() => { setDraggedTabId(null); setDropTarget(null); }} onDragOver={(event) => { if (!draggedTabId) return; event.preventDefault(); event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const beforeId = event.clientX < rect.left + rect.width / 2 ? session.id : (tabs[index + 1]?.id ?? null); setDropTarget({ paneId: pane.id, beforeId }); }} onDrop={(event) => { const rect = event.currentTarget.getBoundingClientRect(); const beforeId = event.clientX < rect.left + rect.width / 2 ? session.id : (tabs[index + 1]?.id ?? null); void dropTab(event, pane, beforeId); }} className={`${active?.id === session.id ? 'selected ' : ''}${draggedTabId === session.id ? 'tab-dragging ' : ''}${dropTarget?.paneId === pane.id && dropTarget.beforeId === session.id ? 'tab-drop-before' : ''}`.trim()} onClick={() => setActiveTabs((current) => ({ ...current, [pane.id]: session.id }))}><SessionChip session={session} /></button>)}<button className="pane-add" aria-label="Nova sub-aba" title="Nova sub-aba" onClick={() => panes.some((item) => item.id === pane.id) ? state.openSessionInPane(pane.id) : state.openSession()}><Plus size={13} /></button></div>
         <PanelActions pane={pane} project={project} active={active} tabs={tabs} onActivate={(id) => setActiveTabs((current) => ({ ...current, [pane.id]: id }))} />
       </div>
       {active?.status === 'rodando'

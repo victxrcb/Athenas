@@ -1,4 +1,4 @@
-export type ThemeId = 'catedral' | 'ametista' | 'floresta' | 'ambar' | 'oceano' | 'preto-branco' | 'grafite' | 'rose' | 'menta' | 'crepusculo' | 'meia-noite' | 'pergaminho' | 'nevoa';
+export type ThemeId = 'catedral' | 'ametista' | 'floresta' | 'ambar' | 'oceano' | 'preto-branco' | 'grafite' | 'rose' | 'menta' | 'crepusculo' | 'meia-noite' | 'dark-lemon' | 'pergaminho' | 'nevoa';
 
 export const DEFAULT_THEME: ThemeId = 'preto-branco';
 
@@ -14,6 +14,7 @@ export const THEMES: { id: ThemeId; name: string; swatch: [string, string, strin
   { id: 'menta', name: 'Menta', swatch: ['#08100f', '#1f8a78', '#8fd6c4'] },
   { id: 'crepusculo', name: 'Crepúsculo', swatch: ['#110b10', '#c2503f', '#e8a15c'] },
   { id: 'meia-noite', name: 'Meia-noite', swatch: ['#080a14', '#3d4fc2', '#9aa7f0'] },
+  { id: 'dark-lemon', name: 'Dark Lemon', swatch: ['#090b07', '#c7e83f', '#a6c936'] },
   { id: 'pergaminho', name: 'Pergaminho', swatch: ['#f3ede0', '#8b1e2d', '#8a6a2b'], light: true },
   { id: 'nevoa', name: 'Névoa', swatch: ['#eef1f5', '#2f5fa8', '#6b7f99'], light: true },
 ];
