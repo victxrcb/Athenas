@@ -18,6 +18,10 @@ export async function createReminder(text: string, scheduledAt: number | null) {
   useReminderStore.getState().setItems(await invoke<Reminder[]>('reminder_create', { text, scheduledAt }));
 }
 
+export async function updateReminder(id: string, text: string, scheduledAt: number | null) {
+  useReminderStore.getState().setItems(await invoke<Reminder[]>('reminder_update', { id, text, scheduledAt }));
+}
+
 export async function deleteReminder(id: string) {
   useReminderStore.getState().setItems(await invoke<Reminder[]>('reminder_delete', { id }));
 }

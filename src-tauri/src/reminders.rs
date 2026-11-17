@@ -63,6 +63,54 @@ fn list(connection: &Connection) -> Result<Vec<Reminder>, String> {
     rows
 }
 
+fn valid_text(text: &str) -> Result<&str, String> {
+    let text = text.trim();
+    if text.is_empty() || text.len() > MAX_TEXT || text.contains('\0') {
+        return Err("Escreva um lembrete de até 4 mil caracteres.".into());
+    }
+    Ok(text)
+}
+
+fn valid_future_schedule(scheduled_at: Option<i64>) -> Result<(), String> {
+    if scheduled_at
+        .is_some_and(|scheduled| scheduled < now() - 60 || scheduled > now() + 366 * 86_400)
+    {
+        return Err("Escolha um horário futuro, com no máximo um ano de antecedência.".into());
+    }
+    Ok(())
+}
+
+fn update(
+    connection: &Connection,
+    id: &str,
+    text: &str,
+    scheduled_at: Option<i64>,
+) -> Result<(), String> {
+    let text = valid_text(text)?;
+    let (current_schedule, notified_at): (Option<i64>, Option<i64>) = connection
+        .query_row(
+            "SELECT scheduled_at, notified_at FROM reminders WHERE id=?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => "Lembrete não encontrado.".into(),
+            _ => error.to_string(),
+        })?;
+    // A past time may be retained after it has fired, but never newly selected.
+    if scheduled_at != current_schedule || notified_at.is_none() {
+        valid_future_schedule(scheduled_at)?;
+    }
+    connection
+        .execute(
+            "UPDATE reminders SET text=?2, scheduled_at=?3,
+             notified_at=CASE WHEN scheduled_at IS ?3 THEN notified_at ELSE NULL END WHERE id=?1",
+            params![id, text, scheduled_at],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 impl ReminderStore {
     pub fn new(app: &AppHandle) -> Result<Self, String> {
         let path = app
@@ -126,15 +174,8 @@ pub fn reminder_create(
     text: String,
     scheduled_at: Option<i64>,
 ) -> Result<Vec<Reminder>, String> {
-    let text = text.trim();
-    if text.is_empty() || text.len() > MAX_TEXT || text.contains('\0') {
-        return Err("Escreva um lembrete de até 4 mil caracteres.".into());
-    }
-    if scheduled_at
-        .is_some_and(|scheduled| scheduled < now() - 60 || scheduled > now() + 366 * 86_400)
-    {
-        return Err("Escolha um horário futuro, com no máximo um ano de antecedência.".into());
-    }
+    let text = valid_text(&text)?;
+    valid_future_schedule(scheduled_at)?;
     let connection = open(&state.path)?;
     connection
         .execute(
@@ -142,6 +183,18 @@ pub fn reminder_create(
             params![uuid::Uuid::new_v4().to_string(), text, scheduled_at, now()],
         )
         .map_err(|error| error.to_string())?;
+    list(&connection)
+}
+
+#[tauri::command]
+pub fn reminder_update(
+    state: tauri::State<'_, ReminderStore>,
+    id: String,
+    text: String,
+    scheduled_at: Option<i64>,
+) -> Result<Vec<Reminder>, String> {
+    let connection = open(&state.path)?;
+    update(&connection, &id, &text, scheduled_at)?;
     list(&connection)
 }
 
@@ -178,5 +231,29 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].id, "alarm");
         assert_eq!(items[1].scheduled_at, None);
+    }
+
+    #[test]
+    fn editing_preserves_or_rearms_notifications() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(
+            "CREATE TABLE reminders (id TEXT PRIMARY KEY, text TEXT NOT NULL, scheduled_at INTEGER, notified_at INTEGER, created_at INTEGER NOT NULL);
+             INSERT INTO reminders (id, text, scheduled_at, notified_at, created_at) VALUES ('done', 'Original', 20, 21, 10);",
+        ).unwrap();
+        update(&connection, "done", "Texto editado", Some(20)).unwrap();
+        let unchanged = list(&connection).unwrap().remove(0);
+        assert_eq!(unchanged.text, "Texto editado");
+        assert_eq!(unchanged.notified_at, Some(21));
+
+        let future = now() + 3_600;
+        update(&connection, "done", "Novo horário", Some(future)).unwrap();
+        let rearmed = list(&connection).unwrap().remove(0);
+        assert_eq!(rearmed.scheduled_at, Some(future));
+        assert_eq!(rearmed.notified_at, None);
+
+        update(&connection, "done", "Sem alarme", None).unwrap();
+        let plain = list(&connection).unwrap().remove(0);
+        assert_eq!(plain.scheduled_at, None);
+        assert_eq!(plain.notified_at, None);
     }
 }

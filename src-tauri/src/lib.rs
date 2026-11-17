@@ -172,6 +172,7 @@ pub fn run() {
             schedule::schedule_run_now,
             reminders::reminder_list,
             reminders::reminder_create,
+            reminders::reminder_update,
             reminders::reminder_delete,
             settings::settings_get,
             settings::settings_save
