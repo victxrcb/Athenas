@@ -157,6 +157,7 @@ export function openTarget(target: string) {
   const state = useAppStore.getState();
   const [kind, id] = target.split(':');
   if (kind === 'worker') { state.setSection('orchestrator'); return; }
+  if (kind === 'reminder') { state.setSection('reminders'); state.setActiveProjectId(null); state.setActiveSessionId(null); return; }
   const session = state.sessions.find((item) => item.id === id);
   if (!session) return;
   state.setSection('home');

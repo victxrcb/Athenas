@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { ChevronRight, Code2, Copy, FolderOpen, GitBranch, History, Home, Inbox, MoreHorizontal, Network, Pencil, Plus, Plug, RotateCcw, Search, Settings2, Sparkles, Trash2, Workflow, X } from 'lucide-react';
+import { ChevronRight, Code2, Copy, FolderOpen, GitBranch, History, Home, Inbox, MoreHorizontal, Network, Pencil, Plus, Plug, RotateCcw, Search, Settings2, Sparkles, StickyNote, Trash2, Workflow, X } from 'lucide-react';
 import logo from './assets/brand/ui-logo.png';
 import { AgentIcon } from './AgentIcon';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -145,6 +145,7 @@ export function Sidebar() {
     {SIDEBAR_ITEMS.some((item) => navPrefs.items[item.id]) && <nav className="sidebar-nav" aria-label="Navegação principal">
       {navPrefs.items.home && <NavItem icon={<Home size={15} />} label="Início" active={homeActive} onClick={goHome} />}
       {navPrefs.items.inbox && <InboxNavItem active={section === 'inbox'} onClick={() => goSection('inbox')} />}
+      {navPrefs.items.reminders && <NavItem icon={<StickyNote size={15} />} label="Lembretes" active={section === 'reminders'} onClick={() => goSection('reminders')} />}
       {navPrefs.items.history && <NavItem icon={<History size={15} />} label="Histórico" active={section === 'history'} onClick={() => goSection('history')} />}
       {navPrefs.items.orchestrator && <NavItem icon={<Network size={15} />} label="Orquestração" active={section === 'orchestrator'} onClick={() => goSection('orchestrator')}
         hint={`${workerSummary.active} worker(s) em execução · ${workerSummary.waiting} precisando de atenção`}

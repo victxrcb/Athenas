@@ -1,12 +1,13 @@
 import { useSyncExternalStore } from 'react';
 
 /** Navegação da sidebar: quais atalhos aparecem e se a sidebar está oculta. Guardado localmente, como tema e zoom. */
-export type SidebarItemId = 'home' | 'inbox' | 'history' | 'orchestrator' | 'mapping' | 'git' | 'mcp' | 'skills';
+export type SidebarItemId = 'home' | 'inbox' | 'reminders' | 'history' | 'orchestrator' | 'mapping' | 'git' | 'mcp' | 'skills';
 export type SidebarPrefs = { hidden: boolean; items: Record<SidebarItemId, boolean> };
 
 export const SIDEBAR_ITEMS: { id: SidebarItemId; label: string }[] = [
   { id: 'home', label: 'Início' },
   { id: 'inbox', label: 'Caixa de entrada' },
+  { id: 'reminders', label: 'Lembretes' },
   { id: 'history', label: 'Histórico' },
   { id: 'orchestrator', label: 'Orquestração' },
   { id: 'mapping', label: 'Mapeamento' },
@@ -17,7 +18,7 @@ export const SIDEBAR_ITEMS: { id: SidebarItemId; label: string }[] = [
 
 export const DEFAULT_SIDEBAR_PREFS: SidebarPrefs = {
   hidden: false,
-  items: { home: true, inbox: true, history: true, orchestrator: true, mapping: true, git: true, mcp: true, skills: true },
+  items: { home: true, inbox: true, reminders: true, history: true, orchestrator: true, mapping: true, git: true, mcp: true, skills: true },
 };
 
 const KEY = 'athenas-sidebar';

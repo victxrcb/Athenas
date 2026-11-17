@@ -4,6 +4,7 @@ pub mod links;
 mod mcp_config;
 pub mod notify;
 pub mod orchestrator;
+mod reminders;
 mod schedule;
 mod settings;
 mod skills;
@@ -84,6 +85,9 @@ pub fn run() {
             let scheduler = schedule::Scheduler::new(&app.handle()).map_err(std::io::Error::other)?;
             scheduler.start(app.handle().clone());
             app.manage(scheduler);
+            let reminders = reminders::ReminderStore::new(&app.handle()).map_err(std::io::Error::other)?;
+            reminders.start(app.handle().clone());
+            app.manage(reminders);
             app.manage(history::HistoryIndex::new(&app.handle()).map_err(std::io::Error::other)?);
             // Build the conversation index early so the first search is fast.
             let warm = app.handle().clone();
@@ -166,6 +170,9 @@ pub fn run() {
             schedule::schedule_cancel,
             schedule::schedule_delete,
             schedule::schedule_run_now,
+            reminders::reminder_list,
+            reminders::reminder_create,
+            reminders::reminder_delete,
             settings::settings_get,
             settings::settings_save
         ])

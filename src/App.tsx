@@ -23,12 +23,13 @@ import { ScheduleModal } from './ScheduleModal';
 import { RecipeEditor } from './RecipeEditor';
 import { maybeAutostart, runRecipe } from './recipes';
 import { useScheduleEvents } from './schedule';
+import { useReminderEvents } from './reminders';
 import { loadTabOrder, moveTab, saveTabOrder, sortTabs } from './tabOrder';
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { lazy, Suspense } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { ArrowUpRight, BookOpen, ChevronDown, ChevronRight, FileText, GitBranch, History, Home as HomeIcon, Inbox, Minus, Network, PanelLeftClose, PanelLeftOpen, Play, Plug, Plus, Search, Sparkles, Square, Terminal, Workflow, X } from 'lucide-react';
+import { ArrowUpRight, BookOpen, ChevronDown, ChevronRight, FileText, GitBranch, History, Home as HomeIcon, Inbox, Minus, Network, PanelLeftClose, PanelLeftOpen, Play, Plug, Plus, Search, Sparkles, Square, StickyNote, Terminal, Workflow, X } from 'lucide-react';
 import logo from './assets/brand/ui-logo.png';
 import { Agent, Mode, useAppStore, type PaneInfo, type ProjectInfo, type Section, type SessionInfo, type WorkspaceSnapshot } from './store';
 const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ default: module.TerminalView })));
@@ -37,6 +38,7 @@ const OrchestratorView = lazy(() => import('./OrchestratorView').then((module) =
 const MappingView = lazy(() => import('./MappingView').then((module) => ({ default: module.MappingView })));
 const HistoryView = lazy(() => import('./HistoryView').then((module) => ({ default: module.HistoryView })));
 const InboxView = lazy(() => import('./InboxView').then((module) => ({ default: module.InboxView })));
+const RemindersView = lazy(() => import('./RemindersView').then((module) => ({ default: module.RemindersView })));
 const SettingsView = lazy(() => import('./SettingsView').then((module) => ({ default: module.SettingsView })));
 
 const agentOptions: Agent[] = ['Claude Code', 'Codex', 'Shell'];
@@ -48,6 +50,7 @@ const SECTION_TABS: Record<Exclude<Section, 'home'>, { label: string; icon: Reac
   mcp: { label: 'MCP', icon: <Plug size={14} /> },
   skills: { label: 'Skills', icon: <Sparkles size={14} /> },
   inbox: { label: 'Caixa de entrada', icon: <Inbox size={14} /> },
+  reminders: { label: 'Lembretes', icon: <StickyNote size={14} /> },
   history: { label: 'Histórico', icon: <History size={14} /> },
 };
 
@@ -252,6 +255,7 @@ function CommandPalette() {
     { label: 'Nova sessão', detail: 'Abrir agente ou shell', run: state.openSession },
     { label: 'Novo projeto', detail: 'Criar projeto', run: state.openProject },
     { label: 'Novo grupo', detail: 'Criar grupo', run: state.openGroup },
+    { label: 'Lembretes', detail: 'Abrir seus post-its', run: () => state.setSection('reminders') },
     ...state.workspace.projects.map((project) => ({ label: project.name, detail: `Projeto · ${displayPath(project.folder ?? '')}`, run: () => { state.setActiveSessionId(null); state.setActiveProjectId(project.id); } })),
     ...state.sessions.map((session) => ({ label: sessionLabel(session), detail: `${session.agent} · ${displayPath(session.folder)}`, run: () => { state.setActiveProjectId(null); state.setActiveSessionId(session.id); } })),
   ].filter((item) => `${item.label} ${item.detail}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
@@ -269,6 +273,7 @@ export function App() {
   useAgentNotifications();
   useActivityTracking();
   useScheduleEvents();
+  useReminderEvents();
   useEffect(() => { if (isTauri()) void invoke<import('./store').Preferences>('settings_get').then(state.setPreferences).catch((error) => state.setNotice(String(error))); }, [state.setPreferences, state.setNotice]);
   useEffect(() => { if (isTauri()) void invoke<SessionInfo[]>('terminal_list').then(state.setSessions).catch((error) => state.setNotice(String(error))); }, [state.setSessions, state.setNotice]);
   useEffect(() => { if (isTauri()) void invoke<WorkspaceSnapshot>('workspace_list').then(state.setWorkspace).catch((error) => state.setNotice(String(error))); }, [state.setWorkspace, state.setNotice]);
@@ -317,6 +322,7 @@ export function App() {
       {state.section === 'mapping' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><MappingView /></Suspense>
         : state.section === 'history' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><HistoryView /></Suspense>
         : state.section === 'inbox' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><InboxView /></Suspense>
+        : state.section === 'reminders' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><RemindersView /></Suspense>
         : state.section === 'orchestrator' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><OrchestratorView /></Suspense>
         : state.section !== 'home' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><ToolsView /></Suspense>
         : activeSession && activeSession.status === 'rodando' ? <Suspense fallback={<div className="terminal-loading">Carregando terminal…</div>}><TerminalView session={activeSession} onStatus={state.upsertSession} /></Suspense>

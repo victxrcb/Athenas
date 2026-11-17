@@ -59,6 +59,13 @@ describe('home', () => {
     expect(screen.getByLabelText('Minimapa')).toBeTruthy();
   });
 
+  it('opens personal reminders from the sidebar', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Lembretes' }));
+    expect(await screen.findByRole('heading', { name: 'Lembretes' })).toBeTruthy();
+    expect(screen.getByPlaceholderText('O que você não pode esquecer?')).toBeTruthy();
+  });
+
   it('reorders terminal tabs by dragging and persists the chosen order', async () => {
     useAppStore.setState({
       activeProjectId: 'project-1',
