@@ -26,6 +26,8 @@ import { maybeAutostart, runRecipe } from './recipes';
 import { useScheduleEvents } from './schedule';
 import { useReminderEvents } from './reminders';
 import { loadTabOrder, moveTab, saveTabOrder, sortTabs } from './tabOrder';
+import { SessionSurface } from './chat/SessionSurface';
+import { useChatEvents } from './chat/sync';
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { lazy, Suspense } from 'react';
@@ -33,7 +35,6 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { ArrowUpRight, BookOpen, ChevronDown, ChevronRight, FileText, GitBranch, History, Home as HomeIcon, Inbox, Minus, Network, PanelLeftClose, PanelLeftOpen, Play, Plug, Plus, Search, Sparkles, Square, StickyNote, Terminal, Workflow, X } from 'lucide-react';
 import logo from './assets/brand/ui-logo.png';
 import { Agent, Mode, useAppStore, type PaneInfo, type ProjectInfo, type Section, type SessionInfo, type WorkspaceSnapshot } from './store';
-const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ default: module.TerminalView })));
 const ToolsView = lazy(() => import('./ToolsView').then((module) => ({ default: module.ToolsView })));
 const OrchestratorView = lazy(() => import('./OrchestratorView').then((module) => ({ default: module.OrchestratorView })));
 const MappingView = lazy(() => import('./MappingView').then((module) => ({ default: module.MappingView })));
@@ -231,9 +232,8 @@ function ProjectWorkspace({ project }: { project: ProjectInfo }) {
         <div className={`pane-tabs ${dropTarget?.paneId === pane.id && dropTarget.beforeId === null ? 'tab-drop-end' : ''}`}>{tabs.map((session, index) => <button key={session.id} aria-current={active?.id === session.id ? 'true' : undefined} draggable title="Arraste para reorganizar ou mover para outro painel" onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-athenas-session', session.id); event.dataTransfer.setData('text/plain', session.id); setDraggedTabId(session.id); }} onDragEnd={() => { setDraggedTabId(null); setDropTarget(null); }} onDragOver={(event) => { if (!draggedTabId) return; event.preventDefault(); event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const beforeId = event.clientX < rect.left + rect.width / 2 ? session.id : (tabs[index + 1]?.id ?? null); setDropTarget({ paneId: pane.id, beforeId }); }} onDrop={(event) => { const rect = event.currentTarget.getBoundingClientRect(); const beforeId = event.clientX < rect.left + rect.width / 2 ? session.id : (tabs[index + 1]?.id ?? null); void dropTab(event, pane, beforeId); }} className={`${active?.id === session.id ? 'selected ' : ''}${draggedTabId === session.id ? 'tab-dragging ' : ''}${dropTarget?.paneId === pane.id && dropTarget.beforeId === session.id ? 'tab-drop-before' : ''}`.trim()} onClick={() => setActiveTabs((current) => ({ ...current, [pane.id]: session.id }))}><SessionChip session={session} /></button>)}<button className="pane-add" aria-label="Nova sub-aba" title="Nova sub-aba" onClick={() => panes.some((item) => item.id === pane.id) ? state.openSessionInPane(pane.id) : state.openSession()}><Plus size={13} /></button></div>
         <PanelActions pane={pane} project={project} active={active} tabs={tabs} onActivate={(id) => setActiveTabs((current) => ({ ...current, [pane.id]: id }))} />
       </div>
-      {active?.status === 'rodando'
-        ? <Suspense fallback={<div className="terminal-loading">Carregando terminal…</div>}><TerminalView session={active} onStatus={state.upsertSession} /></Suspense>
-        : active ? <EndedSession session={active} onResume={() => void resume(active, pane.id)} />
+      {active
+        ? <SessionSurface key={active.id} session={active} onStatus={state.upsertSession} onResume={() => void resume(active, pane.id)} ended={<EndedSession session={active} onResume={() => void resume(active, pane.id)} />} />
         : <div className="terminal-ended"><div className="ended-card"><p>Painel vazio.</p><button className="button-primary" onClick={() => state.openSessionInPane(pane.id)}>Nova sub-aba</button></div></div>}
     </div>;
   };
@@ -275,6 +275,7 @@ export function App() {
   useEffect(() => startUpdateChecks((message) => useAppStore.getState().setNotice(message)), []);
   useWorkerSummaryPolling();
   useAgentNotifications();
+  useChatEvents();
   useActivityTracking();
   useMappingEventTracking();
   useScheduleEvents();
@@ -346,8 +347,7 @@ export function App() {
         : state.section === 'reminders' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><RemindersView /></Suspense>
         : state.section === 'orchestrator' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><OrchestratorView /></Suspense>
         : state.section !== 'home' ? <Suspense fallback={<div className="tools-empty">Carregando…</div>}><ToolsView /></Suspense>
-        : activeSession && activeSession.status === 'rodando' ? <Suspense fallback={<div className="terminal-loading">Carregando terminal…</div>}><TerminalView session={activeSession} onStatus={state.upsertSession} /></Suspense>
-        : activeSession ? <EndedSession session={activeSession} onResume={() => void resumeActive(activeSession)} />
+        : activeSession ? <SessionSurface key={activeSession.id} session={activeSession} onStatus={state.upsertSession} onResume={() => void resumeActive(activeSession)} ended={<EndedSession session={activeSession} onResume={() => void resumeActive(activeSession)} />} />
         : activeProject ? <ProjectWorkspace project={activeProject} />
         : <Home />}
     </main></div>

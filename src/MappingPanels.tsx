@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { Activity, ArrowDownToLine, ArrowRight, CalendarClock, ChevronDown, ChevronUp, Clock3, Crosshair, Cpu, MemoryStick, Pause, Play, Power, TerminalSquare, X } from 'lucide-react';
 import { AgentIcon } from './AgentIcon';
+import { MappingConversation } from './chat/MappingConversation';
 import { renameSession, sessionLabel, useActivityStore } from './activity';
 import { confirmAction } from './confirm';
 import type { AgentLink } from './links';
@@ -87,6 +88,7 @@ export const AgentInspector = memo(function AgentInspector({ session, project, l
     <div className="mapping-inspector-body">
       {tab === 'overview' && <>
         <section><h3>Recursos do processo</h3><AgentMetrics id={session.id} />{tokens !== null && <p className="mapping-token-usage">Tokens da conversa <code>{tokens.toLocaleString('pt-BR')}</code></p>}</section>
+        {session.agent !== 'Shell' && <MappingConversation session={session} />}
         <section><h3>Conexões</h3>
           {links.length === 0 && <p>Nenhum vínculo configurado.</p>}
           {links.map((link) => {

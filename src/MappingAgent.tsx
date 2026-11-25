@@ -1,6 +1,7 @@
 import { lazy, memo, Suspense, useRef } from 'react';
-import { Cable, Crosshair, EyeOff, Maximize2, Minus, MoreHorizontal, TerminalSquare, X } from 'lucide-react';
+import { Cable, Crosshair, EyeOff, Maximize2, MessagesSquare, Minus, MoreHorizontal, TerminalSquare, X } from 'lucide-react';
 import { AgentIcon } from './AgentIcon';
+import { openConversation } from './chat/MappingConversation';
 import { sessionLabel, useActivityStore } from './activity';
 import { formatCpu, formatMemory, eventTime, useMappingStatus } from './MappingPanels';
 import { latestMappingEvent, useMappingEvents } from './mappingActivity';
@@ -107,6 +108,7 @@ export const AgentWindow = memo(function AgentWindow({
       {semanticZoom === 'near' && <AgentReadout id={session.id} />}
       <div className="architecture-actions" onPointerDown={(event) => event.stopPropagation()}>
         <button className="mapping-icon-button" aria-label="Abrir terminal do agente" title="Abrir terminal" onClick={() => onTerminal(session.id)}><TerminalSquare size={14} /></button>
+        {session.agent !== 'Shell' && <button className="mapping-icon-button" aria-label="Abrir conversa do agente" title="Abrir conversa" onClick={() => openConversation(session)}><MessagesSquare size={14} /></button>}
         <button className="mapping-icon-button" aria-label="Opções do agente" title="Opções do agente" aria-haspopup="menu" onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
           onMenu(session.id, rect.left, rect.bottom + 3);
@@ -132,6 +134,7 @@ export const AgentWindow = memo(function AgentWindow({
         <StatusBadge info={status} />
         <div className="mapping-window-actions" onPointerDown={(event) => event.stopPropagation()}>
           {linkButton}
+          {session.agent !== 'Shell' && <button aria-label="Abrir conversa" title="Abrir conversa" onClick={() => openConversation(session)}><MessagesSquare size={14} /></button>}
           <button aria-label="Focar janela" title="Focar janela" onClick={() => onFocus(session.id)}><Crosshair size={14} /></button>
           <button aria-label={maximized ? 'Restaurar tamanho da janela' : 'Maximizar janela'} title={maximized ? 'Restaurar tamanho' : 'Maximizar'} onClick={() => onMaximize(session.id)}><Maximize2 size={14} /></button>
           <button aria-label={terminalNode.minimized ? 'Restaurar janela' : 'Minimizar janela'} title={terminalNode.minimized ? 'Restaurar' : 'Minimizar'} onClick={() => onChange(session.id, { minimized: !terminalNode.minimized }, true)}><Minus size={14} /></button>

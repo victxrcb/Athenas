@@ -13,7 +13,7 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -21,6 +21,8 @@ pub const EVENTS_FILE: &str = "agent-events.sqlite3";
 const HOOK_FLAG: &str = "--agent-hook";
 const MAX_MESSAGE: usize = 400;
 const MAX_ICON_BYTES: usize = 512 * 1024;
+const IDLE_AFTER: Duration = Duration::from_secs(5);
+const HEARTBEAT_EVERY: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -31,7 +33,7 @@ pub struct AttentionEvent {
     pub message: String,
 }
 
-fn open(path: &Path) -> Result<Connection, String> {
+pub fn open(path: &Path) -> Result<Connection, String> {
     let connection = Connection::open(path).map_err(|e| e.to_string())?;
     connection.busy_timeout(Duration::from_secs(2)).map_err(|e| e.to_string())?;
     connection
@@ -42,6 +44,7 @@ fn open(path: &Path) -> Result<Connection, String> {
                message TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()));",
         )
         .map_err(|e| e.to_string())?;
+    crate::live::migrate(&connection)?;
     Ok(connection)
 }
 
@@ -92,16 +95,26 @@ pub fn run_hook(db: &Path) {
         return;
     }
     let mut input = Vec::new();
-    if std::io::stdin().take(1024 * 1024).read_to_end(&mut input).is_err() {
+    // Tool results travel in the payload, so it can be large.
+    if std::io::stdin().take(8 * 1024 * 1024).read_to_end(&mut input).is_err() {
         return;
     }
     let Ok(payload) = serde_json::from_slice::<Value>(&input) else { return };
-    let Some((kind, message)) = classify_claude_hook(&payload) else { return };
-    if let Ok(connection) = open(db) {
+    let Ok(connection) = open(db) else { return };
+    if let Some((kind, message)) = classify_claude_hook(&payload) {
         let _ = connection.execute(
             "INSERT INTO agent_events (session_id, kind, message) VALUES (?1, ?2, ?3)",
             params![session_id, kind, clip(&message)],
         );
+    }
+    if let Some(event) = crate::live::live_event(&payload) {
+        crate::live::record(&connection, &session_id, &event);
+    }
+    if payload.get("hook_event_name").and_then(Value::as_str) == Some("PermissionRequest") {
+        let timeout = Duration::from_secs(crate::live::PERMISSION_TIMEOUT_SECS);
+        if let Some(output) = crate::live::await_decision(&connection, &session_id, &payload, timeout) {
+            println!("{output}");
+        }
     }
 }
 
@@ -115,8 +128,24 @@ pub fn claude_hook_settings(data_dir: &Path) -> Result<PathBuf, String> {
         slash(&executable),
         slash(&data_dir.join(EVENTS_FILE))
     );
-    let hook = serde_json::json!([{ "hooks": [{ "type": "command", "command": command, "timeout": 10 }] }]);
-    let settings = serde_json::json!({ "hooks": { "Stop": hook, "Notification": hook, "UserPromptSubmit": hook } });
+    let entry = |timeout: u64, background: bool| {
+        let mut handler = serde_json::json!({ "type": "command", "command": command, "timeout": timeout });
+        if background {
+            handler["async"] = Value::Bool(true);
+        }
+        serde_json::json!([{ "hooks": [handler] }])
+    };
+    let hook = entry(10, false);
+    // Observation only, so the agent never waits for them.
+    let background = entry(10, true);
+    // Runs beside the terminal dialog; whoever answers first wins.
+    let permission = entry(crate::live::PERMISSION_TIMEOUT_SECS, false);
+    let settings = serde_json::json!({ "hooks": {
+        "Stop": hook, "Notification": hook, "UserPromptSubmit": hook,
+        "SessionStart": background, "MessageDisplay": background, "PreToolUse": background,
+        "PostToolUse": background, "PostToolUseFailure": background, "StopFailure": background,
+        "PermissionRequest": permission,
+    } });
     let path = data_dir.join("claude-hooks.json");
     let body = serde_json::to_vec_pretty(&settings).map_err(|e| e.to_string())?;
     if fs::read(&path).ok().as_deref() != Some(body.as_slice()) {
@@ -260,13 +289,33 @@ pub fn start(app: AppHandle, data_dir: PathBuf) {
         let mut connection = open(&path).ok();
         if let Some(db) = connection.as_ref() {
             let _ = db.execute("DELETE FROM agent_events", []);
+            crate::live::reset(db);
         }
+        let mut permissions = Vec::new();
+        let mut last_activity: Option<Instant> = None;
+        let mut last_heartbeat: Option<Instant> = None;
         loop {
-            thread::sleep(Duration::from_millis(500));
+            // Poll fast while an agent is streaming, slowly when nothing happens.
+            let busy = last_activity.is_some_and(|at| at.elapsed() < IDLE_AFTER);
+            thread::sleep(Duration::from_millis(if busy { 120 } else { 450 }));
             if connection.is_none() {
                 connection = open(&path).ok();
             }
             let Some(db) = connection.as_ref() else { continue };
+            if last_heartbeat.map_or(true, |at| at.elapsed() >= HEARTBEAT_EVERY) {
+                crate::live::heartbeat(db);
+                last_heartbeat = Some(Instant::now());
+            }
+            let live = crate::live::drain(db);
+            if !live.is_empty() {
+                last_activity = Some(Instant::now());
+                forward_live(&app, live);
+            }
+            let pending = crate::live::pending(db);
+            if pending != permissions {
+                permissions = pending;
+                let _ = app.emit("agent-permissions", permissions.clone());
+            }
             let events: Vec<(i64, AttentionEvent)> = db
                 .prepare("SELECT id, session_id, kind, message FROM agent_events ORDER BY id LIMIT 50")
                 .and_then(|mut query| {
@@ -286,6 +335,32 @@ pub fn start(app: AppHandle, data_dir: PathBuf) {
             }
         }
     });
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveMessage {
+    session_id: String,
+    event: Value,
+}
+
+/// Binds sessions to the transcripts their hooks announce and sends the batch to the chat view.
+fn forward_live(app: &AppHandle, events: Vec<(String, Value)>) {
+    let chat = app.state::<crate::chat::ChatState>();
+    let messages: Vec<LiveMessage> = events
+        .into_iter()
+        .map(|(session_id, event)| {
+            // Subagents write their own files; the session keeps pointing at the main conversation.
+            if event.get("agentId").is_none() {
+                if let Some(path) = event.get("transcriptPath").and_then(Value::as_str) {
+                    chat.bind(&session_id, PathBuf::from(path));
+                }
+            }
+            chat.announce(&session_id);
+            LiveMessage { session_id, event }
+        })
+        .collect();
+    let _ = app.emit("agent-live", messages);
 }
 
 pub fn emit_codex(app: &AppHandle, session_id: &str, message: &str) {

@@ -11,7 +11,7 @@ use std::{
     process::{Command, Stdio},
     sync::{mpsc, Arc, Mutex},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tauri::{AppHandle, Emitter, Manager};
@@ -48,6 +48,7 @@ struct RunningSession {
     writer: Box<dyn Write + Send>,
     child: Box<dyn Child + Send + Sync>,
     pid: Option<u32>,
+    started: SystemTime,
 }
 
 pub struct TerminalState {
@@ -345,6 +346,7 @@ pub fn terminal_start(
         Some(id) => id.clone(),
         None => uuid::Uuid::new_v4().to_string(),
     };
+    app.state::<crate::chat::ChatState>().starting(&session_id);
     // Inherited by the agent's MCP servers so the Athenas MCP knows which session is calling.
     builder.env(crate::links::SESSION_ENV, &session_id);
     let resume_id = if agent == "Claude Code" {
@@ -419,6 +421,10 @@ pub fn terminal_start(
         title,
     };
     let pid = child.process_id();
+    // Without a thread id Codex opens its picker, so the conversation shown before may not be the next one.
+    if replace_id.is_some() && info.agent == "Codex" && info.resume_id.is_none() {
+        app.state::<crate::chat::ChatState>().forget(&info.id);
+    }
     state.update(info.clone())?;
     let running = Arc::new(Mutex::new(RunningSession {
         info: info.clone(),
@@ -426,6 +432,7 @@ pub fn terminal_start(
         writer,
         child,
         pid,
+        started: SystemTime::now(),
     }));
     let running_for_watcher = running.clone();
     state
@@ -532,6 +539,26 @@ pub fn running_target(state: &TerminalState, id: &str) -> Option<(String, String
         let info = running.lock().ok()?.info.clone();
         (info.status == "rodando" && info.resume_id.as_ref() == Some(&conversation)).then_some((info.id, info.agent))
     })
+}
+
+/// When the process of a running session was started.
+pub fn running_since(state: &TerminalState, id: &str) -> Option<SystemTime> {
+    let session = state.sessions.lock().ok()?.get(id)?.clone();
+    let session = session.lock().ok()?;
+    (session.info.status == "rodando").then_some(session.started)
+}
+
+/// Other running sessions of the same agent in the same folder.
+pub fn running_peers(state: &TerminalState, id: &str) -> Vec<String> {
+    let Some(own) = session_summary(state, id) else { return Vec::new() };
+    let Ok(sessions) = state.sessions.lock() else { return Vec::new() };
+    sessions
+        .values()
+        .filter_map(|running| {
+            let info = running.lock().ok()?.info.clone();
+            (info.id != own.id && info.status == "rodando" && info.agent == own.agent && same_folder(&info.folder, &own.folder)).then_some(info.id)
+        })
+        .collect()
 }
 
 /// Name and agent of a known session, for labels.
@@ -669,6 +696,7 @@ pub fn terminal_stop(app: AppHandle, state: tauri::State<'_, TerminalState>, id:
 pub fn terminal_delete(app: AppHandle, state: tauri::State<'_, TerminalState>, id: String) -> Result<(), String> {
     if uuid::Uuid::parse_str(&id).is_err() { return Err("ID inválido.".into()); }
     crate::links::forget_session(&app, &id);
+    app.state::<crate::chat::ChatState>().forget(&id);
     state.deleted_sessions.lock().map_err(|e| e.to_string())?.insert(id.clone());
     if let Some(session) = state.sessions.lock().map_err(|e| e.to_string())?.get(&id).cloned() {
         let _ = session.lock().map_err(|e| e.to_string())?.child.kill();

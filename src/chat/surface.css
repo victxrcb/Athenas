@@ -1,0 +1,18 @@
+/* Layout of a session view and the Chat/Terminal switch, loaded with the shell. */
+.session-surface { container: surface / inline-size; flex: 1; min-width: 0; min-height: 0; display: flex; }
+.session-surface > .chat { flex: 1; min-width: 0; }
+.session-surface > .terminal-loading { flex: 1; }
+.surface-terminal { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); animation: fade-in .22s var(--ease); }
+.surface-ended { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.surface-bar { display: flex; justify-content: flex-end; padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); }
+@container surface (max-width: 760px) {
+  .session-surface.split { flex-direction: column; }
+  .session-surface.split .surface-terminal { flex: .8; border-left: 0; border-top: 1px solid var(--border); }
+}
+
+.chat-segments { display: inline-flex; flex: none; gap: 2px; padding: 2px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-md); }
+.chat-segments button { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); font-weight: 500; transition: background-color .14s var(--ease), color .14s var(--ease); }
+.chat-segments button:hover:not(:disabled) { color: var(--text); }
+.chat-segments button[aria-pressed="true"] { background: var(--surface-3); color: var(--text); }
+.chat-segments button:disabled { opacity: .45; }
+@container terminal (max-width: 760px) { .chat-view-switch span { display: none; } }

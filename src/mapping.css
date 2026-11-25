@@ -208,3 +208,7 @@ body:has(.mapping-view), #root:has(.mapping-view), .app-shell:has(.mapping-view)
 @media (prefers-reduced-motion: reduce) {
   .mapping-view *, .mapping-view *::before, .mapping-view *::after, .mapping-sidebar { animation: none !important; transition: none !important; }
 }
+.mapping-inspector .mapping-conversation-latest { color: var(--text); overflow-wrap: anywhere; }
+.mapping-inspector .mapping-conversation-alert, .mapping-inspector .mapping-conversation-error { display: flex; align-items: flex-start; gap: 7px; color: var(--st-waiting); }
+.mapping-inspector .mapping-conversation-error { color: var(--st-error); }
+.mapping-conversation-alert svg, .mapping-conversation-error svg { flex: none; margin-top: 2px; }

@@ -1,6 +1,8 @@
+mod chat;
 mod git_tools;
 mod history;
 pub mod links;
+mod live;
 mod mcp_config;
 pub mod notify;
 pub mod orchestrator;
@@ -74,6 +76,7 @@ pub fn run() {
             app.manage(preferences.clone());
             app.manage(workspace::WorkspaceDb::new(&app.handle()).map_err(std::io::Error::other)?);
             app.manage(terminal::TerminalState::new(&app.handle()));
+            app.manage(chat::ChatState::new(&app.handle()).map_err(std::io::Error::other)?);
             notify::start(app.handle().clone(), app.path().app_data_dir()?);
             let links = links::LinksDb::new(&app.handle()).map_err(std::io::Error::other)?;
             links.start(app.handle().clone());
@@ -108,6 +111,16 @@ pub fn run() {
             terminal::terminal_set_pane,
             terminal::terminal_rename,
             terminal::terminal_auto_title,
+            chat::chat_read,
+            chat::chat_raw,
+            chat::chat_bind,
+            chat::chat_send,
+            chat::chat_permissions,
+            chat::chat_permission_decide,
+            chat::chat_open_file,
+            chat::chat_context,
+            chat::chat_files,
+            chat::chat_export,
             notify::open_local_url,
             terminal::group_metrics,
             usage::agent_quotas,
