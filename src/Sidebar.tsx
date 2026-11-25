@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { ChevronRight, Code2, Copy, FolderOpen, GitBranch, History, Home, Inbox, MoreHorizontal, Network, Pencil, Plus, Plug, RotateCcw, Search, Settings2, Sparkles, StickyNote, Trash2, Workflow, X } from 'lucide-react';
+import { ChevronRight, Code2, Copy, FolderOpen, GitBranch, History, Home, Inbox, MoreHorizontal, Music2, Network, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Plug, RotateCcw, Search, Settings2, Sparkles, StickyNote, Trash2, Workflow, X } from 'lucide-react';
 import logo from './assets/brand/ui-logo.png';
 import { AgentIcon } from './AgentIcon';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -9,7 +9,7 @@ import { ProjectEditor } from './ProjectEditor';
 import { ProjectIcon } from './ProjectIcon';
 import { SpotifyPlayer } from './SpotifyPlayer';
 import { confirmAction } from './confirm';
-import { SIDEBAR_ITEMS, useSidebarPrefs } from './sidebarPrefs';
+import { SIDEBAR_ITEMS, toggleMappingSidebar, useSidebarPrefs } from './sidebarPrefs';
 import { deleteSession } from './panes';
 import { displayPath, sameFolder } from './path';
 import { StatusDot } from './status';
@@ -40,7 +40,7 @@ function InboxNavItem({ active, onClick }: { active: boolean; onClick: () => voi
 }
 
 function NavItem({ icon, label, active, onClick, badge, hint }: { icon: ReactNode; label: string; active: boolean; onClick: () => void; badge?: ReactNode; hint?: string }) {
-  return <button className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined} title={hint} onClick={onClick}>
+  return <button className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined} aria-label={label} title={hint ? `${label} · ${hint}` : label} onClick={onClick}>
     {icon}<span>{label}</span>{badge}
   </button>;
 }
@@ -50,6 +50,8 @@ export function Sidebar() {
   const [projectMenu, setProjectMenu] = useState<{ x: number; y: number; project: ProjectInfo } | null>(null);
   const [editingProject, setEditingProject] = useState<ProjectInfo | null>(null);
   const navPrefs = useSidebarPrefs();
+  const inMapping = section === 'mapping';
+  const compact = inMapping && navPrefs.mappingCompact !== false;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggle = (key: string) => setCollapsed((current) => ({ ...current, [key]: !current[key] }));
 
@@ -137,8 +139,9 @@ export function Sidebar() {
   };
 
   const homeActive = section === 'home' && !activeProjectId && !activeSessionId;
-  return <aside className="sidebar">
+  return <aside className={`sidebar ${inMapping ? 'mapping-sidebar' : ''} ${compact ? 'compact' : ''}`}>
     <div className="sidebar-top">
+      {inMapping && <button className="icon-button mapping-sidebar-toggle" aria-label={compact ? 'Expandir barra lateral' : 'Recolher barra lateral'} title={compact ? 'Expandir barra lateral' : 'Recolher barra lateral'} aria-expanded={!compact} onClick={toggleMappingSidebar}>{compact ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</button>}
       <button className="new-agent" onClick={openSession}><Plus size={15} /> Novo agente <kbd>Ctrl T</kbd></button>
       <button className="icon-button" aria-label="Buscar" title="Buscar (Ctrl P)" onClick={() => useAppStore.getState().setPaletteOpen(true)}><Search size={15} /></button>
     </div>
@@ -156,6 +159,10 @@ export function Sidebar() {
       {navPrefs.items.mcp && <NavItem icon={<Plug size={15} />} label="MCP" active={section === 'mcp'} onClick={() => goSection('mcp')} />}
       {navPrefs.items.skills && <NavItem icon={<Sparkles size={15} />} label="Skills" active={section === 'skills'} onClick={() => goSection('skills')} />}
     </nav>}
+    {compact && <div className="mapping-sidebar-shortcuts">
+      <button className="icon-button" title="Projetos e sessões" aria-label="Expandir projetos e sessões" onClick={toggleMappingSidebar}><FolderOpen size={17} /></button>
+      <button className="icon-button" title="Spotify" aria-label="Expandir controles do Spotify" onClick={toggleMappingSidebar}><Music2 size={17} /></button>
+    </div>}
     <div className="sidebar-content">
       <div className="sidebar-heading"><span>Projetos</span><button className="icon-button small" aria-label="Novo projeto" title="Novo projeto (Ctrl Shift P)" onClick={openProject}><Plus size={14} /></button></div>
       {workspace.groups.map((group) => {
@@ -184,7 +191,7 @@ export function Sidebar() {
       {editingProject && <ProjectEditor project={editingProject} onClose={() => setEditingProject(null)} />}
       <SpotifyPlayer />
       <LayoutPicker />
-      <div className="account"><img src={logo} alt="" /><span>Conta local <b>· Default</b></span><button className="account-settings icon-button small" aria-label="Ajustes" title="Ajustes" onClick={() => useAppStore.getState().setSettingsOpen(true)}><Settings2 size={15} /></button></div>
+      <div className="account" title="Conta local"><img src={logo} alt="Conta local" /><span>Conta local <b>· Default</b></span><button className="account-settings icon-button small" aria-label="Ajustes" title="Ajustes" onClick={() => useAppStore.getState().setSettingsOpen(true)}><Settings2 size={15} /></button></div>
     </div>
   </aside>;
 }

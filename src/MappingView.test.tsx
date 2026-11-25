@@ -1,118 +1,143 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useActivityStore } from './activity';
 import { MappingView } from './MappingView';
-import { useAppStore } from './store';
+import { useMappingEventTracking, useMappingEvents } from './mappingActivity';
+import { useAppStore, type SessionInfo } from './store';
+
+vi.mock('./TerminalView', () => ({ TerminalView: ({ session }: { session: SessionInfo }) => <textarea aria-label={`PTY ${session.agent}`} /> }));
+
+const claude: SessionInfo = { id: 'session-a', agent: 'Claude Code', title: 'Implementação', folder: 'C:\\alpha', command: 'claude', resumeId: null, paneId: null, status: 'rodando' };
+const codex: SessionInfo = { id: 'session-b', agent: 'Codex', title: 'Revisão', folder: 'C:\\beta', command: 'codex', resumeId: null, paneId: null, status: 'erro' };
 
 beforeEach(() => {
   localStorage.clear();
+  useActivityStore.setState({ activity: {} });
+  useMappingEvents.setState({ events: [] });
   useAppStore.setState({
-    sessions: [
-      { id: 'session-a', agent: 'Claude Code', folder: 'C:\\alpha', command: 'claude', resumeId: null, paneId: null, status: 'concluído' },
-      { id: 'session-b', agent: 'Codex', folder: 'C:\\beta', command: 'codex', resumeId: null, paneId: null, status: 'erro' },
-    ],
+    sessions: [claude, codex],
+    memory: { groups: [], agents: [], appBytes: 0, totalBytes: 0 },
     workspace: {
       groups: [], panes: [],
       projects: [
-        { id: 'project-a', groupId: null, name: 'Alpha', folder: 'C:\\alpha', layout: 'auto', splitRatio: .5, updatedAt: 1 },
-        { id: 'project-b', groupId: null, name: 'Beta', folder: 'C:\\beta', layout: 'auto', splitRatio: .5, updatedAt: 1 },
+        { id: 'project-a', groupId: null, name: 'Alpha', folder: claude.folder, layout: 'auto', splitRatio: .5, updatedAt: 1 },
+        { id: 'project-b', groupId: null, name: 'Beta', folder: codex.folder, layout: 'auto', splitRatio: .5, updatedAt: 1 },
       ],
     },
     activeProjectId: null,
   });
 });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-afterEach(() => cleanup());
+const architecture = () => screen.getByRole('button', { name: 'Arquitetura' });
+const terminal = () => screen.getByRole('button', { name: 'Terminal' });
+const claudeCard = () => screen.findByRole('article', { name: 'Implementação · Ativo' });
 
 describe('MappingView', () => {
-  it('uses real sessions across terminal and architecture modes without creating sessions', async () => {
+  it('preserves terminal instance, content and sessions across both modes and hiding', async () => {
     render(<MappingView />);
-    await waitFor(() => expect(screen.getByText('Claude Code')).toBeTruthy());
-    expect(screen.getByText('Codex')).toBeTruthy();
-    expect(useAppStore.getState().sessions).toHaveLength(2);
-
+    fireEvent.dblClick(await claudeCard());
+    const emulator = await screen.findByRole('textbox', { name: 'PTY Claude Code' });
+    fireEvent.change(emulator, { target: { value: 'scrollback' } });
+    fireEvent.click(architecture());
+    expect(await claudeCard()).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: 'PTY Claude Code' })).toBeNull();
+    fireEvent.click(terminal());
+    expect(screen.getByRole('textbox', { name: 'PTY Claude Code' })).toBe(emulator);
+    expect((emulator as HTMLTextAreaElement).value).toBe('scrollback');
     fireEvent.click(screen.getAllByRole('button', { name: 'Ocultar janela do mapa' })[0]);
-    expect(screen.getByRole('button', { name: /Exibir 1 oculto/ })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /Exibir 1 oculto/ }));
-
-    fireEvent.click(screen.getByRole('button', { name: /Arquitetura/ }));
-    expect(screen.getByRole('article', { name: 'Claude Code · Encerrado' })).toBeTruthy();
-    expect(screen.getByRole('article', { name: 'Codex · Erro' })).toBeTruthy();
-    expect(screen.queryByText('Sem tarefa estruturada disponível')).toBeNull();
-    expect(screen.queryByLabelText('Controles do canvas')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Exibir 1 oculto(s)' }));
+    expect(screen.getByRole('textbox', { name: 'PTY Claude Code' })).toBe(emulator);
     expect(useAppStore.getState().sessions).toHaveLength(2);
   });
 
-  it('filters mapped sessions by the existing project structure', async () => {
+  it('filters sessions by project and displays real live status and process metrics in the inspector', async () => {
     render(<MappingView />);
-    await waitFor(() => expect(screen.getByText('Claude Code')).toBeTruthy());
+    const card = await claudeCard();
+    fireEvent.keyDown(card, { key: 'Enter' });
+    const inspector = screen.getByRole('complementary', { name: 'Detalhes do agente' });
+    const metrics = within(inspector).getByLabelText('Métricas da sessão');
+    expect(within(metrics).getAllByText('—')).toHaveLength(3);
+    act(() => {
+      useAppStore.setState({ memory: { groups: [], agents: [], appBytes: 0, totalBytes: 0, sessions: { [claude.id]: { pid: 123, bytes: 64 * 1024 * 1024, cpuPercent: 12.5, runtimeSeconds: 40, suspended: false } } } });
+      useActivityStore.getState().set(claude.id, { state: 'working', since: 1, message: '', unread: false });
+    });
+    expect(within(metrics).getByText('12.5%')).toBeTruthy();
+    expect(within(metrics).getByText('64 MB')).toBeTruthy();
+    expect(within(inspector).getByText('Trabalhando')).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Filtrar projeto'), { target: { value: 'project-b' } });
-    await waitFor(() => expect(screen.queryByText('Claude Code')).toBeNull());
-    expect(screen.getByText('Codex')).toBeTruthy();
-    expect(screen.getByText('1 agente(s) no mapa')).toBeTruthy();
+    await screen.findByRole('article', { name: 'Revisão · Erro' });
+    expect(screen.queryByRole('article', { name: /Implementação/ })).toBeNull();
   });
 
-  it('keeps a dragged architecture icon separate from its terminal window after reloading', async () => {
-    const { container, unmount } = render(<MappingView />);
-    await screen.findByText('Claude Code');
-    const node = () => container.querySelector<HTMLElement>('[data-session-id="session-a"]')!;
-    const terminalPosition = node().style.transform;
-    fireEvent.click(screen.getByRole('button', { name: 'Arquitetura' }));
-    const handle = node().querySelector('header')!;
-    handle.setPointerCapture = vi.fn();
-    handle.releasePointerCapture = vi.fn();
-    const drag = (type: string, x: number, y: number) => {
-      fireEvent(handle, new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }));
-    };
-    drag('pointerdown', 100, 100);
-    drag('pointermove', 160, 130);
-    drag('pointerup', 160, 130);
-    const architecturePosition = node().style.transform;
-    expect(architecturePosition).toBe('translate(124px, 94px)');
-    fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
-    expect(node().style.transform).toBe(terminalPosition);
+  it('restores manual coordinates, organization, zoom and panel preferences after remount', async () => {
+    const { unmount } = render(<MappingView />);
+    const card = await claudeCard();
+    const handle = card.querySelector('header')!;
+    for (const [type, x, y] of [['pointerdown', 100, 100], ['pointermove', 160, 130], ['pointerup', 160, 130]] as const) {
+      fireEvent(handle, new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }));
+    }
+    const manual = card.style.transform;
+    expect(manual).toBe('translate(124px, 94px)');
+    fireEvent.change(screen.getByLabelText('Organização do canvas'), { target: { value: 'project' } });
+    expect(card.style.transform).not.toBe(manual);
+    fireEvent.click(screen.getByRole('button', { name: 'Recolher minimapa' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aumentar zoom' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aumentar zoom' }));
+    expect(card.className).toContain('semantic-near');
+    fireEvent.click(screen.getByRole('button', { name: 'Atividade' }));
     unmount();
     render(<MappingView />);
-    await screen.findByText('Claude Code');
-    fireEvent.click(screen.getByRole('button', { name: 'Arquitetura' }));
-    expect(screen.getByRole('article', { name: 'Claude Code · Encerrado' }).style.transform).toBe(architecturePosition);
+    const restored = await claudeCard();
+    expect(restored.className).toContain('semantic-near');
+    expect(screen.queryByLabelText('Minimapa')).toBeNull();
+    expect(screen.queryByLabelText('Filtrar eventos por tipo')).toBeNull();
+    expect((screen.getByLabelText('Organização do canvas') as HTMLSelectElement).value).toBe('project');
+    fireEvent.change(screen.getByLabelText('Organização do canvas'), { target: { value: 'free' } });
+    expect(restored.style.transform).toBe(manual);
   });
 
-  it('links two agents by dragging the cable onto another agent and removes the link', async () => {
+  it('creates links by dragging, inspects and confirms removal without adding other edges', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { container } = render(<MappingView />);
-    await waitFor(() => expect(screen.getByText('Claude Code')).toBeTruthy());
-    const target = container.querySelector<HTMLElement>('[data-session-id="session-b"]')!;
+    const source = await claudeCard();
+    const target = await screen.findByRole('article', { name: 'Revisão · Erro' });
     const original = document.elementFromPoint;
-    document.elementFromPoint = vi.fn(() => target) as typeof document.elementFromPoint;
     try {
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'Linkar Claude Code a outro agente' }), { button: 0, clientX: 10, clientY: 10 });
-      fireEvent.pointerMove(window, { clientX: 700, clientY: 100 });
-      fireEvent.pointerUp(window, { clientX: 700, clientY: 100 });
+      document.elementFromPoint = vi.fn(() => source);
+      const port = within(source).getByRole('button', { name: /Linkar Implementação/ });
+      fireEvent(port, new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+      fireEvent(window, new MouseEvent('pointerup', { bubbles: true }));
+      expect(container.querySelectorAll('path.mapping-edge')).toHaveLength(0);
+      document.elementFromPoint = vi.fn(() => target);
+      fireEvent(port, new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+      fireEvent(window, new MouseEvent('pointerup', { bubbles: true }));
     } finally {
       document.elementFromPoint = original;
     }
-    await waitFor(() => expect(JSON.parse(localStorage.getItem('athenas-agent-links') ?? '[]')).toMatchObject([{ fromId: 'session-a', toId: 'session-b' }]));
-    await waitFor(() => expect(screen.getByText('Claude Code → Codex')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: /Arquitetura/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspecionar vínculo Implementação → Revisão' }));
     expect(container.querySelectorAll('path.mapping-edge')).toHaveLength(1);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Remover link Claude Code → Codex' }));
-    await waitFor(() => expect(screen.queryByText('Claude Code → Codex')).toBeNull());
-    expect(JSON.parse(localStorage.getItem('athenas-agent-links')!)).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Remover vínculo' }));
+    await waitFor(() => expect(container.querySelectorAll('path.mapping-edge')).toHaveLength(0));
+    expect(window.confirm).toHaveBeenCalledWith('Remover o vínculo de Implementação para Revisão?');
   });
 
-  it('does not let an agent command itself', async () => {
-    const { container } = render(<MappingView />);
-    await waitFor(() => expect(screen.getByText('Claude Code')).toBeTruthy());
-    const self = container.querySelector<HTMLElement>('[data-session-id="session-a"]')!;
-    const original = document.elementFromPoint;
-    document.elementFromPoint = vi.fn(() => self) as typeof document.elementFromPoint;
-    try {
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'Linkar Claude Code a outro agente' }), { button: 0 });
-      fireEvent.pointerUp(window, {});
-    } finally {
-      document.elementFromPoint = original;
-    }
-    expect(container.querySelectorAll('path.mapping-edge')).toHaveLength(0);
-    expect(localStorage.getItem('athenas-agent-links')).toBeNull();
+  it('records status transitions and redacts activity content from persistent history', async () => {
+    function Harness() { useMappingEventTracking(); return <MappingView />; }
+    const { unmount } = render(<Harness />);
+    await claudeCard();
+    act(() => {
+      useActivityStore.getState().set(claude.id, { state: 'approval', since: Date.now(), message: 'private prompt', unread: true });
+      useAppStore.getState().upsertSession({ ...claude, status: 'concluído' });
+    });
+    fireEvent.change(screen.getByLabelText('Filtrar eventos por tipo'), { target: { value: 'approval' } });
+    const timeline = screen.getByRole('region', { name: 'Timeline de atividades' });
+    fireEvent.click(within(timeline).getByRole('button', { name: /Aguardando interação/ }));
+    expect(within(timeline).getByRole('button', { name: 'Centralizar' })).toBeTruthy();
+    unmount();
+    const stored = localStorage.getItem('athenas-mapping-events');
+    expect(stored).toContain('"kind":"approval"');
+    expect(stored).toContain('"kind":"ended"');
+    expect(stored).not.toContain('private prompt');
   });
 });

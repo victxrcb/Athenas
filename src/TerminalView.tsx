@@ -37,7 +37,12 @@ function LocalUrls({ sessionId }: { sessionId: string }) {
     onClick={() => { void invoke('open_local_url', { url: latest }).catch((reason) => useAppStore.getState().setNotice(String(reason))); }}><Globe size={13} /> <span>{label}</span></button>;
 }
 
-export function TerminalView({ session, onStatus }: { session: SessionInfo; onStatus: (session: SessionInfo) => void }) {
+export function TerminalView({ session, onStatus, active = true, readOnly = false, embedded = false, focusOnShow = false }: {
+  session: SessionInfo; onStatus: (session: SessionInfo) => void; active?: boolean; readOnly?: boolean; embedded?: boolean; focusOnShow?: boolean;
+}) {
+  const liveOptions = useRef({ active, readOnly, focusOnShow });
+  liveOptions.current = { active, readOnly, focusOnShow };
+  const emulator = useRef<Terminal | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const search = useRef<SearchAddon | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -46,7 +51,7 @@ export function TerminalView({ session, onStatus }: { session: SessionInfo; onSt
   const fontSize = useAppStore((state) => state.preferences.fontSize);
   const pasteImage = async (event: React.ClipboardEvent<HTMLDivElement>) => {
     const image = [...event.clipboardData.items].find((item) => item.type.startsWith('image/'))?.getAsFile();
-    if (!image) return;
+    if (!image || readOnly) return;
     event.preventDefault();
     try {
       const bitmap = await createImageBitmap(image);
@@ -66,6 +71,8 @@ export function TerminalView({ session, onStatus }: { session: SessionInfo; onSt
       allowProposedApi: true, cursorBlink: true, fontFamily: "'Cascadia Mono','JetBrains Mono',Consolas,monospace", fontSize, scrollback: 10000,
       theme: terminalPalette()
     });
+    emulator.current = terminal;
+    terminal.options.disableStdin = liveOptions.current.readOnly;
     const fit = new FitAddon();
     const searchAddon = new SearchAddon();
     terminal.loadAddon(fit);
@@ -107,9 +114,11 @@ export function TerminalView({ session, onStatus }: { session: SessionInfo; onSt
       outputQueue.sort((a, b) => a.sequence - b.sequence).forEach(writeChunk);
     }).catch((reason) => setError(String(reason)));
     const track = createInputTracker(session);
-    const input = terminal.onData((data) => { track(data); void invoke('terminal_write', { id: session.id, data }).catch((reason) => setError(String(reason))); });
+    const input = terminal.onData((data) => { if (liveOptions.current.readOnly) return; track(data); void invoke('terminal_write', { id: session.id, data }).catch((reason) => setError(String(reason))); });
     const resize = new ResizeObserver(() => {
+      if (!liveOptions.current.active || !host.current?.clientWidth || !host.current.clientHeight) return;
       safeFit();
+      if (liveOptions.current.readOnly) return;
       void invoke('terminal_resize', { id: session.id, cols: terminal.cols, rows: terminal.rows }).catch(() => undefined);
     });
     resize.observe(host.current);
@@ -117,12 +126,14 @@ export function TerminalView({ session, onStatus }: { session: SessionInfo; onSt
       if (event.type === 'keydown' && event.ctrlKey && event.key.toLowerCase() === 'f') { event.preventDefault(); setSearchOpen(true); return false; }
       return true;
     });
-    terminal.focus();
-    return () => { window.removeEventListener('athenas-theme', retheme); resize.disconnect(); input.dispose(); void outputListener.then((unlisten) => unlisten()); void statusListener.then((unlisten) => unlisten()); terminal.dispose(); search.current = null; };
-  }, [session.id, onStatus, fontSize]);
+    if (!embedded || (liveOptions.current.active && liveOptions.current.focusOnShow)) terminal.focus();
+    return () => { window.removeEventListener('athenas-theme', retheme); resize.disconnect(); input.dispose(); void outputListener.then((unlisten) => unlisten()); void statusListener.then((unlisten) => unlisten()); terminal.dispose(); emulator.current = null; search.current = null; };
+  }, [session.id, onStatus, fontSize, embedded]);
+  useEffect(() => { if (active && liveOptions.current.focusOnShow) emulator.current?.focus(); }, [active]);
+  useEffect(() => { if (emulator.current) emulator.current.options.disableStdin = readOnly; }, [readOnly]);
 
   return <div className="terminal-view">
-    <div className="terminal-toolbar"><div className="terminal-title"><AgentIcon agent={session.agent} size={14} /><strong><SessionName session={session} /></strong><span title={displayPath(session.folder)}>{displayPath(session.folder)}</span></div><div className="terminal-tools"><LiveBadge session={session} /><LocalUrls sessionId={session.id} /><button className="button-ghost button-sm" aria-label="Agendar prompt" title="Agendar prompt para este agente" onClick={() => useScheduleStore.getState().open({ target: 'session', sessionId: session.id })}><CalendarClock size={13} /> <span className="tool-label">Agendar</span></button><button className="button-ghost button-sm" aria-pressed={searchOpen} aria-label="Buscar" title="Buscar (Ctrl F)" onClick={() => setSearchOpen(!searchOpen)}><Search size={13} /> <span className="tool-label">Buscar</span> <kbd>Ctrl F</kbd></button><button className="button-ghost button-sm danger" aria-label="Encerrar processo" title="Encerrar processo" onClick={() => { void confirmAction('Encerrar este processo?').then((ok) => ok ? invoke('terminal_stop', { id: session.id }) : undefined).catch((reason) => setError(String(reason))); }}><Power size={13} /> <span className="tool-label">Encerrar</span></button></div></div>
+    <div className="terminal-toolbar"><div className="terminal-title"><AgentIcon agent={session.agent} size={14} /><strong><SessionName session={session} /></strong><span title={displayPath(session.folder)}>{displayPath(session.folder)}</span></div><div className="terminal-tools"><LiveBadge session={session} /><LocalUrls sessionId={session.id} /><button disabled={readOnly} className="button-ghost button-sm" aria-label="Agendar prompt" title="Agendar prompt para este agente" onClick={() => useScheduleStore.getState().open({ target: 'session', sessionId: session.id })}><CalendarClock size={13} /> <span className="tool-label">Agendar</span></button><button className="button-ghost button-sm" aria-pressed={searchOpen} aria-label="Buscar" title="Buscar (Ctrl F)" onClick={() => setSearchOpen(!searchOpen)}><Search size={13} /> <span className="tool-label">Buscar</span> <kbd>Ctrl F</kbd></button><button disabled={readOnly} className="button-ghost button-sm danger" aria-label="Encerrar processo" title="Encerrar processo" onClick={() => { void confirmAction('Encerrar este processo?').then((ok) => ok ? invoke('terminal_stop', { id: session.id }) : undefined).catch((reason) => setError(String(reason))); }}><Power size={13} /> <span className="tool-label">Encerrar</span></button></div></div>
     {searchOpen && <div className="terminal-search"><input autoFocus aria-label="Buscar no terminal" placeholder="Buscar no terminal" value={query} onChange={(event) => { setQuery(event.target.value); search.current?.findNext(event.target.value); }} onKeyDown={(event) => { if (event.key === 'Enter') search.current?.findNext(query); if (event.key === 'Escape') setSearchOpen(false); }} /><button className="button-ghost button-sm" onClick={() => setSearchOpen(false)}>Fechar</button></div>}
     <div ref={host} className="terminal-canvas" onPaste={(event) => { void pasteImage(event); }} />
     {error && <div className="terminal-error" role="alert">{error}</div>}

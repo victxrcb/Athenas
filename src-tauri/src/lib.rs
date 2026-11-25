@@ -164,6 +164,7 @@ pub fn run() {
             notify::notify_show,
             history::history_search,
             history::history_messages,
+            history::history_session_tokens,
             history::history_usage,
             schedule::schedule_list,
             schedule::schedule_create,

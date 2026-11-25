@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 /** Navegação da sidebar: quais atalhos aparecem e se a sidebar está oculta. Guardado localmente, como tema e zoom. */
 export type SidebarItemId = 'home' | 'inbox' | 'reminders' | 'history' | 'orchestrator' | 'mapping' | 'git' | 'mcp' | 'skills';
-export type SidebarPrefs = { hidden: boolean; items: Record<SidebarItemId, boolean> };
+export type SidebarPrefs = { hidden: boolean; items: Record<SidebarItemId, boolean>; mappingCompact?: boolean };
 
 export const SIDEBAR_ITEMS: { id: SidebarItemId; label: string }[] = [
   { id: 'home', label: 'Início' },
@@ -25,10 +25,10 @@ const KEY = 'athenas-sidebar';
 const EVENT = 'athenas-sidebar';
 
 export function sanitizeSidebarPrefs(value: unknown): SidebarPrefs {
-  const raw = (value && typeof value === 'object' ? value : {}) as { hidden?: unknown; items?: Record<string, unknown> };
+  const raw = (value && typeof value === 'object' ? value : {}) as { hidden?: unknown; mappingCompact?: unknown; items?: Record<string, unknown> };
   const items = { ...DEFAULT_SIDEBAR_PREFS.items };
   for (const { id } of SIDEBAR_ITEMS) if (typeof raw.items?.[id] === 'boolean') items[id] = raw.items[id] as boolean;
-  return { hidden: raw.hidden === true, items };
+  return { hidden: raw.hidden === true, items, ...(typeof raw.mappingCompact === 'boolean' ? { mappingCompact: raw.mappingCompact } : {}) };
 }
 
 let cache: SidebarPrefs | null = null;
@@ -50,6 +50,10 @@ export function saveSidebarPrefs(next: SidebarPrefs): void {
 
 export const setSidebarHidden = (hidden: boolean) => saveSidebarPrefs({ ...loadSidebarPrefs(), hidden });
 export const toggleSidebarHidden = () => setSidebarHidden(!loadSidebarPrefs().hidden);
+export const toggleMappingSidebar = () => {
+  const current = loadSidebarPrefs();
+  saveSidebarPrefs({ ...current, mappingCompact: current.mappingCompact === false });
+};
 export const setSidebarItem = (id: SidebarItemId, visible: boolean) => {
   const current = loadSidebarPrefs();
   saveSidebarPrefs({ ...current, items: { ...current.items, [id]: visible } });

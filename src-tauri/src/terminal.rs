@@ -54,7 +54,7 @@ pub struct TerminalState {
     sessions: Mutex<HashMap<String, Arc<Mutex<RunningSession>>>>,
     saved: Mutex<Vec<SessionInfo>>,
     db: Mutex<Connection>,
-    suspended_groups: Mutex<HashSet<String>>,
+    suspended_groups: Mutex<HashMap<String, HashSet<Pid>>>,
     deleted_sessions: Mutex<HashSet<String>>,
     /// Kept between calls: CPU usage is a delta against the previous refresh.
     system: Mutex<System>,
@@ -119,7 +119,7 @@ impl TerminalState {
             sessions: Mutex::new(HashMap::new()),
             saved: Mutex::new(saved),
             db: Mutex::new(db),
-            suspended_groups: Mutex::new(HashSet::new()),
+            suspended_groups: Mutex::new(HashMap::new()),
             deleted_sessions: Mutex::new(HashSet::new()),
             system: Mutex::new(System::new()),
             data_dir,
@@ -839,6 +839,17 @@ pub struct MemorySnapshot {
     app_bytes: u64,
     groups: Vec<GroupMemory>,
     agents: Vec<AgentUsage>,
+    sessions: HashMap<String, SessionMetrics>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionMetrics {
+    pid: u32,
+    bytes: u64,
+    cpu_percent: Option<f32>,
+    runtime_seconds: u64,
+    suspended: bool,
 }
 
 #[derive(Serialize)]
@@ -869,14 +880,14 @@ fn running_roots(state: &TerminalState) -> Result<Vec<(String, Pid)>, String> {
     Ok(roots)
 }
 
-fn running_agents(state: &TerminalState) -> Result<Vec<(String, Pid)>, String> {
+fn metric_sessions(state: &TerminalState) -> Result<Vec<(SessionInfo, Pid)>, String> {
     let running: Vec<_> = state.sessions.lock().map_err(|e| e.to_string())?.values().cloned().collect();
     let mut agents = Vec::new();
     for item in running {
         let session = item.lock().map_err(|e| e.to_string())?;
         if session.info.status == "rodando" {
             if let Some(pid) = session.pid {
-                agents.push((session.info.agent.clone(), Pid::from_u32(pid)));
+                agents.push((session.info.clone(), Pid::from_u32(pid)));
             }
         }
     }
@@ -917,9 +928,11 @@ fn process_tree(system: &System, root: Pid) -> Vec<Pid> {
 
 #[tauri::command]
 pub fn group_metrics(state: tauri::State<'_, TerminalState>) -> Result<MemorySnapshot, String> {
-    let roots = running_roots(&state)?;
-    let agent_roots = running_agents(&state)?;
+    let roots = metric_sessions(&state)?;
     let mut system = state.system.lock().map_err(|e| e.to_string())?;
+    let previous_starts: HashMap<_, _> = roots.iter().filter_map(|(_, pid)| {
+        system.process(*pid).map(|process| (*pid, process.start_time()))
+    }).collect();
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
         ProcessRefreshKind::new().with_memory().with_cpu(),
@@ -938,35 +951,49 @@ pub fn group_metrics(state: tauri::State<'_, TerminalState>) -> Result<MemorySna
         groups.insert(id.map_err(|e| e.to_string())?, 0);
     }
     drop(query);
-    let mut seen = HashSet::new();
-    let mut sessions_bytes = 0;
-    for (folder, root) in roots {
-        let group = group_for_folder(&db, &folder)?;
-        for pid in process_tree(&system, root) {
-            if !seen.insert(pid) {
-                continue;
-            }
-            let bytes = system.process(pid).map_or(0, |process| process.memory());
-            sessions_bytes += bytes;
-            if let Some(id) = &group {
-                *groups.entry(id.clone()).or_default() += bytes;
-            }
+    let mut children = HashMap::<Pid, Vec<Pid>>::new();
+    for (pid, process) in system.processes() {
+        if let Some(parent) = process.parent() {
+            children.entry(parent).or_default().push(*pid);
         }
     }
+    let root_ids: HashSet<_> = roots.iter().map(|(_, pid)| *pid).collect();
+    let mut seen = HashSet::new();
+    let mut sessions_bytes = 0;
+    let mut sessions = HashMap::new();
     let mut per_agent = HashMap::<String, AgentUsage>::new();
-    let mut counted = HashSet::new();
-    for (agent, root) in agent_roots {
+    for (session, root) in roots {
+        let agent = session.agent;
         let usage = per_agent.entry(agent.clone()).or_insert(AgentUsage { agent, sessions: 0, bytes: 0, cpu_percent: 0.0 });
         usage.sessions += 1;
-        for pid in process_tree(&system, root) {
-            if !counted.insert(pid) {
-                continue;
-            }
+        let Some(process) = system.process(root) else { continue; };
+        let group = group_for_folder(&db, &session.folder)?;
+        let mut bytes = 0;
+        let mut cpu = 0.0;
+        let mut stack = vec![root];
+        while let Some(pid) = stack.pop() {
+            if !seen.insert(pid) { continue; }
             if let Some(process) = system.process(pid) {
-                usage.bytes += process.memory();
-                usage.cpu_percent += process.cpu_usage() / cores;
+                bytes += process.memory();
+                cpu += process.cpu_usage() / cores;
+            }
+            if let Some(descendants) = children.get(&pid) {
+                stack.extend(descendants.iter().copied().filter(|id| !root_ids.contains(id)));
             }
         }
+        usage.bytes += bytes;
+        usage.cpu_percent += cpu;
+        sessions_bytes += bytes;
+        if let Some(id) = &group {
+            *groups.entry(id.clone()).or_default() += bytes;
+        }
+        sessions.insert(session.id, SessionMetrics {
+            pid: root.as_u32(),
+            bytes,
+            cpu_percent: (previous_starts.get(&root) == Some(&process.start_time())).then(|| cpu.clamp(0.0, 100.0)),
+            runtime_seconds: process.run_time(),
+            suspended: group.as_ref().and_then(|id| suspended.get(id)).is_some_and(|roots| roots.contains(&root)),
+        });
     }
     let mut agents: Vec<AgentUsage> = per_agent.into_values().collect();
     for usage in &mut agents {
@@ -984,12 +1011,13 @@ pub fn group_metrics(state: tauri::State<'_, TerminalState>) -> Result<MemorySna
         groups: groups
             .into_iter()
             .map(|(group_id, bytes)| GroupMemory {
-                suspended: suspended.contains(&group_id),
+                suspended: suspended.contains_key(&group_id),
                 group_id,
                 bytes,
             })
             .collect(),
         agents,
+        sessions,
     })
 }
 
@@ -1063,7 +1091,7 @@ pub fn group_suspend(
         .suspended_groups
         .lock()
         .map_err(|e| e.to_string())?
-        .contains(&group_id)
+        .contains_key(&group_id)
         == suspend
     {
         return Ok(());
@@ -1082,11 +1110,13 @@ pub fn group_suspend(
     }
     let system = System::new_all();
     let mut targets = Vec::new();
+    let mut group_roots = HashSet::new();
     let mut seen = HashSet::new();
     for (folder, root) in roots {
         if group_for_folder(&db, &folder)?.as_deref() != Some(&group_id) {
             continue;
         }
+        group_roots.insert(root);
         for pid in process_tree(&system, root) {
             if seen.insert(pid) {
                 targets.push(pid);
@@ -1111,7 +1141,7 @@ pub fn group_suspend(
     }
     let mut groups = state.suspended_groups.lock().map_err(|e| e.to_string())?;
     if suspend {
-        groups.insert(group_id);
+        groups.insert(group_id, group_roots);
     } else {
         groups.remove(&group_id);
     }

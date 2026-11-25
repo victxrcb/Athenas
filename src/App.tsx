@@ -11,6 +11,7 @@ import { applyZoom, loadZoom, stepZoom } from './zoom';
 import { PanelActions } from './PanelActions';
 import { Sidebar } from './Sidebar';
 import { toggleSidebarHidden, useSidebarPrefs } from './sidebarPrefs';
+import { useMappingEventTracking } from './mappingActivity';
 import { Home } from './Home';
 import { chooseFolder } from './folder';
 import { RepoField } from './RepoField';
@@ -275,12 +276,29 @@ export function App() {
   useWorkerSummaryPolling();
   useAgentNotifications();
   useActivityTracking();
+  useMappingEventTracking();
   useScheduleEvents();
   useReminderEvents();
   useEffect(() => { if (isTauri()) void invoke<import('./store').Preferences>('settings_get').then(state.setPreferences).catch((error) => state.setNotice(String(error))); }, [state.setPreferences, state.setNotice]);
   useEffect(() => { if (isTauri()) void invoke<SessionInfo[]>('terminal_list').then(state.setSessions).catch((error) => state.setNotice(String(error))); }, [state.setSessions, state.setNotice]);
   useEffect(() => { if (isTauri()) void invoke<WorkspaceSnapshot>('workspace_list').then(state.setWorkspace).catch((error) => state.setNotice(String(error))); }, [state.setWorkspace, state.setNotice]);
-  useEffect(() => { if (!isTauri()) return; const refresh = () => { void invoke<import('./store').MemorySnapshot>('group_metrics').then(state.setMemory).catch(() => undefined); }; refresh(); const timer = window.setInterval(refresh, 2000); return () => window.clearInterval(timer); }, [state.setMemory]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let active = true;
+    let pending = false;
+    const refresh = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const snapshot = await invoke<import('./store').MemorySnapshot>('group_metrics');
+        if (active) state.setMemory(snapshot);
+      } catch { /* a temporary failure keeps the last available reading */ }
+      finally { pending = false; }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [state.setMemory]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.target as HTMLElement | null)?.closest?.('.xterm')) return;
@@ -313,7 +331,7 @@ export function App() {
   return <div className="app-shell">
     <WindowBar />
     <div className="workspace">{!sidebar.hidden && <Sidebar />}<main className="main-area">
-      <div className="tab-bar" aria-label="Abas abertas">
+      <div className={`tab-bar ${state.section === 'mapping' ? 'mapping-app-tabs' : ''}`} aria-label="Abas abertas">
         <button className="tab-sidebar-toggle" aria-label={sidebar.hidden ? 'Mostrar barra lateral' : 'Ocultar barra lateral'} aria-pressed={!sidebar.hidden} title={`${sidebar.hidden ? 'Mostrar' : 'Ocultar'} barra lateral (Ctrl B)`} onClick={toggleSidebarHidden}>{sidebar.hidden ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}</button>
         <button className={`app-tab ${homeTabActive ? 'active' : ''}`} aria-current={homeTabActive ? 'page' : undefined} onClick={goHome}><HomeIcon size={14} /> Início {runningCount > 0 && <span className="tab-count" title={`${runningCount} sessão(ões) ativa(s)`}><i />{runningCount}</span>}</button>
         {state.section !== 'home' && <div className="app-tab active" aria-current="page">{SECTION_TABS[state.section].icon} {SECTION_TABS[state.section].label}<button className="tab-close" aria-label="Fechar aba" onClick={() => state.setSection('home')}><X size={12} /></button></div>}

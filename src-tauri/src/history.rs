@@ -626,6 +626,21 @@ pub fn usage_report(conversations: &[Conversation], since: i64) -> UsageReport {
 }
 
 #[tauri::command]
+pub async fn history_session_tokens(app: AppHandle, agent: String, id: String) -> Result<Option<u64>, String> {
+    if uuid::Uuid::parse_str(&id).is_err() || !matches!(agent.as_str(), "Claude Code" | "Codex") {
+        return Ok(None);
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let conversations = app.state::<HistoryIndex>().refresh()?;
+        Ok(conversations.iter()
+            .find(|conversation| conversation.agent == agent && conversation.id == id && !conversation.hourly.is_empty())
+            .map(|conversation| conversation.tokens.total()))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub async fn history_usage(app: AppHandle, since: i64) -> Result<UsageReport, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let conversations = app.state::<HistoryIndex>().refresh()?;

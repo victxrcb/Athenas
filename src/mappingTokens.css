@@ -1,0 +1,30 @@
+.mapping-view {
+  --map-bg: var(--surface-0);
+  --map-canvas: color-mix(in srgb, var(--map-bg) 96%, var(--map-accent));
+  --map-panel: var(--surface-1);
+  --map-raised: var(--surface-2);
+  --map-line: var(--border);
+  --map-accent: var(--focus);
+  --map-cyan: #22d3ee;
+  --map-radius: 14px;
+  --map-fast: 140ms;
+  --map-panel-time: 240ms;
+  --map-arrange-time: 380ms;
+  --map-ease: cubic-bezier(.2,.75,.25,1);
+  --map-inspector: clamp(290px, 26vw, 370px);
+  --map-terminal: #0a0a0d;
+  color: var(--text);
+}
+:root:not([data-theme]), :root[data-theme="preto-branco"] {
+  .mapping-view, .mapping-sidebar {
+    --map-bg: #09090d;
+    --map-panel: #111116;
+    --map-canvas: #0b0b10;
+    --map-raised: #17171e;
+    --map-line: #25252e;
+    --map-accent: #a78bfa;
+    --text: #f4f4f5;
+    --text-dim: #c4c4cc;
+    --text-muted: #a1a1aa;
+  }
+}

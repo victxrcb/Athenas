@@ -1,498 +1,510 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { invoke, isTauri } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import {
-  Cable, ChevronDown, Crosshair, Eye, Focus, FolderTree, LayoutGrid, Maximize2, Megaphone, Minus, Network,
-  Plus, Scan, TerminalSquare, Unlink, Workflow, X,
-} from 'lucide-react';
-import { AgentIcon } from './AgentIcon';
-import { sessionStatus, StatusBadge, StatusDot } from './status';
-import { sessionLabel } from './activity';
-import { useLiveStatus } from './SessionName';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { Cable, ChevronDown, ChevronRight, Crosshair, EyeOff, Megaphone, TerminalSquare, Unlink, Workflow, X } from 'lucide-react';
+import { liveStatus, sessionLabel, useActivityStore } from './activity';
+import { confirmAction } from './confirm';
+import { ContextMenu, type MenuItem } from './ContextMenu';
+import { createLink, deleteLink, introduceLeader, linkAnchors, linkMidpoint, linkPath, listLinks, type AgentLink, type Point } from './links';
+import { AgentWindow, type SemanticZoom } from './MappingAgent';
+import { CanvasControls, MappingMinimap, MappingOptionsLabels, MappingToolbar } from './MappingCanvasTools';
+import { AgentInspector, AgentTimeline, eventTime } from './MappingPanels';
+import { latestMappingEvent, useMappingEvents } from './mappingActivity';
+import { MAPPING_MAX_ZOOM, MAPPING_MIN_ZOOM, mappingBounds, mappingScene, nodeDisplaySize, patchMappingNode, type MappingMode, type MappingNode, type MappingOrder, type MappingViewport } from './mapping';
 import { sameFolder } from './path';
-import { useAppStore, type ProjectInfo, type SessionInfo } from './store';
-import {
-  arrangeMappingNodes, mappingBounds,
-  mergeMappingLayout, nodeDisplaySize, nodesForMappingMode, patchMappingNode, type MappingLayout, type MappingMode,
-  type MappingNode, type MappingViewport,
-} from './mapping';
-import {
-  createLink, deleteLink, introduceLeader, linkAnchors, linkMidpoint, linkPath, listLinks,
-  type AgentLink, type Point,
-} from './links';
+import { useAppStore, type SessionInfo } from './store';
+import { useMappingLayout } from './useMappingLayout';
+import './mappingTokens.css';
 import './mapping.css';
 
-const TerminalView = lazy(() => import('./TerminalView').then((module) => ({ default: module.TerminalView })));
+const clampZoom = (value: number) => Math.min(MAPPING_MAX_ZOOM, Math.max(MAPPING_MIN_ZOOM, value));
+const NO_VISIBLE_TERMINALS = new Set<string>();
+const linkKey = (from: string, to: string) => `${from}→${to}`;
+type LinkDraft = { fromId: string; point: Point; targetId: string | null };
 
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 2;
-const STORAGE_PREFIX = 'athenas-mapping:';
-/** The edge SVG is offset so negative world coordinates stay inside its box. */
-const EDGE_ORIGIN = 100000;
-
-const linkKey = (fromId: string, toId: string) => `${fromId}->${toId}`;
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-async function loadLayout(scope: string): Promise<MappingLayout | null> {
-  if (isTauri()) return invoke<MappingLayout | null>('mapping_layout_get', { scope });
-  try {
-    const value = localStorage.getItem(`${STORAGE_PREFIX}${scope}`);
-    return value ? JSON.parse(value) as MappingLayout : null;
-  } catch { return null; }
-}
-
-async function storeLayout(scope: string, layout: MappingLayout) {
-  if (isTauri()) await invoke('mapping_layout_save', { scope, layout });
-  else {
-    try { localStorage.setItem(`${STORAGE_PREFIX}${scope}`, JSON.stringify(layout)); } catch { /* preview still works */ }
-  }
-}
-
-type AgentWindowProps = {
-  session: SessionInfo;
-  project: ProjectInfo | null;
-  node: MappingNode;
-  mode: MappingMode;
-  selected: boolean;
-  linkTarget: boolean;
-  zoom: number;
-  onSelect: (id: string) => void;
-  onFocus: (id: string) => void;
-  onChange: (id: string, patch: Partial<MappingNode>, persist?: boolean) => void;
-  onLinkStart: (id: string, event: React.PointerEvent<HTMLElement>) => void;
-};
-
-const AgentWindow = memo(function AgentWindow({
-  session, project, node, mode, selected, linkTarget, zoom, onSelect, onFocus, onChange, onLinkStart,
-}: AgentWindowProps) {
-  const interaction = useRef<{
-    kind: 'move' | 'resize'; startX: number; startY: number; node: MappingNode;
-  } | null>(null);
-  const status = useLiveStatus(session);
-  const size = nodeDisplaySize(node, mode);
-
-  const begin = (kind: 'move' | 'resize', event: React.PointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    interaction.current = { kind, startX: event.clientX, startY: event.clientY, node };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    onSelect(session.id);
-  };
-  const move = (event: React.PointerEvent<HTMLElement>) => {
-    const current = interaction.current;
-    if (!current) return;
-    const dx = (event.clientX - current.startX) / zoom;
-    const dy = (event.clientY - current.startY) / zoom;
-    if (current.kind === 'move') onChange(session.id, { x: current.node.x + dx, y: current.node.y + dy });
-    else onChange(session.id, {
-      width: clamp(current.node.width + dx, 420, 1600),
-      height: clamp(current.node.height + dy, 260, 1200),
-    });
-  };
-  const end = (event: React.PointerEvent<HTMLElement>) => {
-    if (!interaction.current) return;
-    interaction.current = null;
-    event.currentTarget.releasePointerCapture(event.pointerId);
-    onChange(session.id, {}, true);
-  };
-
-  const linkButton = <button
-    className="mapping-link-port"
-    aria-label={`Linkar ${session.agent} a outro agente`}
-    title="Arraste até outro agente para que este o comande"
-    onPointerDown={(event) => { event.stopPropagation(); onLinkStart(session.id, event); }}
-  ><Cable size={13} /></button>;
-
-  if (mode === 'architecture') {
-    const sessionState = sessionStatus(session.status);
-    const description = `${sessionLabel(session)} · ${sessionState.label}`;
-    return <article
-      data-session-id={session.id}
-      aria-label={description}
-      title={description}
-      className={`mapping-node architecture-node ${selected ? 'selected' : ''} ${linkTarget ? 'link-target' : ''}`}
-      style={{ transform: `translate(${node.x}px, ${node.y}px)`, width: size.width, height: size.height }}
-      onPointerDown={() => onSelect(session.id)}
-    >
-      <header className="architecture-drag" onPointerDown={(event) => begin('move', event)} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
-        <AgentIcon agent={session.agent} size={30} />
-        <StatusDot info={sessionState} />
-      </header>
-      <div className="architecture-actions">
-        <button className="architecture-focus" aria-label={`Focar ${sessionLabel(session)}`} title="Focar agente" onClick={() => onFocus(session.id)}><Focus size={13} /></button>
-        {linkButton}
-      </div>
-    </article>;
-  }
-
-  return <article
-    data-session-id={session.id}
-    className={`mapping-node terminal-node ${selected ? 'selected' : ''} ${node.minimized ? 'minimized' : ''} ${linkTarget ? 'link-target' : ''}`}
-    style={{ transform: `translate(${node.x}px, ${node.y}px)`, width: size.width, height: size.height }}
-    onPointerDown={() => onSelect(session.id)}
-  >
-    <header className="mapping-window-header" onPointerDown={(event) => begin('move', event)} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
-      <span className="mapping-agent-icon"><AgentIcon agent={session.agent} size={15} /></span>
-      <div className="mapping-window-title"><strong>{sessionLabel(session)}</strong><small>{project?.name ?? 'Sessão avulsa'}</small></div>
-      <StatusBadge info={status} />
-      <div className="mapping-window-actions" onPointerDown={(event) => event.stopPropagation()}>
-        {linkButton}
-        <button aria-label="Focar janela" title="Focar" onClick={() => onFocus(session.id)}><Crosshair size={13} /></button>
-        <button aria-label="Expandir janela" title="Expandir" onClick={() => onChange(session.id, { width: 1000, height: 680, minimized: false }, true)}><Maximize2 size={13} /></button>
-        <button aria-label={node.minimized ? 'Restaurar janela' : 'Minimizar janela'} title={node.minimized ? 'Restaurar' : 'Minimizar'} onClick={() => onChange(session.id, { minimized: !node.minimized }, true)}><Minus size={13} /></button>
-        <button aria-label="Ocultar janela do mapa" title="Ocultar do mapa" onClick={() => onChange(session.id, { hidden: true }, true)}><X size={13} /></button>
-      </div>
-    </header>
-    {!node.minimized && <div className="mapping-terminal-content">
-      {session.status === 'rodando'
-        ? <Suspense fallback={<div className="terminal-loading">Carregando terminal…</div>}><TerminalView session={session} onStatus={useAppStore.getState().upsertSession} /></Suspense>
-        : <div className="mapping-ended"><AgentIcon agent={session.agent} size={22} /><strong>Sessão {status.label.toLowerCase()}</strong><span>O histórico permanece preservado.</span></div>}
-    </div>}
-    {!node.minimized && <span className="mapping-resize" role="separator" aria-label="Redimensionar janela" onPointerDown={(event) => begin('resize', event)} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />}
-  </article>;
-});
-
-function MappingMinimap({ nodes, mode, viewport, canvas, onCenter }: {
-  nodes: MappingNode[]; mode: MappingMode; viewport: MappingViewport;
-  canvas: { width: number; height: number }; onCenter: (x: number, y: number) => void;
+function ConnectionInspector({ link, label, onClose, onBrief, onRemove, onFocus }: {
+  link: AgentLink; label: (id: string) => string; onClose: () => void;
+  onBrief: () => void; onRemove: () => void; onFocus: (id: string) => void;
 }) {
-  const visible = nodes.filter((node) => !node.hidden);
-  const viewportWorld = {
-    left: -viewport.x / viewport.zoom,
-    top: -viewport.y / viewport.zoom,
-    right: (canvas.width - viewport.x) / viewport.zoom,
-    bottom: (canvas.height - viewport.y) / viewport.zoom,
-  };
-  const content = mappingBounds(visible, mode);
-  const left = Math.min(content?.left ?? 0, viewportWorld.left);
-  const top = Math.min(content?.top ?? 0, viewportWorld.top);
-  const right = Math.max(content?.right ?? 1, viewportWorld.right);
-  const bottom = Math.max(content?.bottom ?? 1, viewportWorld.bottom);
-  const width = Math.max(1, right - left);
-  const height = Math.max(1, bottom - top);
-  const sx = 174 / width;
-  const sy = 104 / height;
-  const point = (event: React.PointerEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    onCenter(left + ((event.clientX - rect.left - 3) / sx), top + ((event.clientY - rect.top - 3) / sy));
-  };
-  return <div className="mapping-minimap" aria-label="Minimapa" onPointerDown={point}>
-    {visible.map((node) => {
-      const size = nodeDisplaySize(node, mode);
-      return <i key={node.sessionId} style={{ left: 3 + (node.x - left) * sx, top: 3 + (node.y - top) * sy, width: Math.max(3, size.width * sx), height: Math.max(3, size.height * sy) }} />;
-    })}
-    <b style={{ left: 3 + (viewportWorld.left - left) * sx, top: 3 + (viewportWorld.top - top) * sy, width: Math.max(8, (viewportWorld.right - viewportWorld.left) * sx), height: Math.max(8, (viewportWorld.bottom - viewportWorld.top) * sy) }} />
-  </div>;
+  const event = useMappingEvents((state) => latestMappingEvent(state.events, (item) => item.sessionId === link.fromId && item.relatedId === link.toId));
+  return <aside className="mapping-inspector" aria-label="Detalhes da conexão">
+    <header className="mapping-inspector-head">
+      <span className="mapping-agent-icon"><Cable size={22} /></span>
+      <div><h2>Vínculo de comando</h2><p>{label(link.fromId)} → {label(link.toId)}</p></div>
+      <button className="mapping-icon-button" aria-label="Fechar inspetor" title="Fechar inspetor (Esc)" onClick={onClose}><X size={17} /></button>
+    </header>
+    <div className="mapping-inspector-body">
+      <section><h3>Direção</h3>
+        <div className="mapping-peer"><button onClick={() => onFocus(link.fromId)}>{label(link.fromId)}</button> → <button onClick={() => onFocus(link.toId)}>{label(link.toId)}</button></div>
+      </section>
+      <section><h3>Último evento</h3><p>{event ? <><time>{eventTime(event.at)}</time> · {event.kind === 'sent' ? 'Mensagem entregue' : 'Falha na entrega'}</> : 'Nenhuma entrega registrada.'}</p></section>
+      <section><h3>Configurado em</h3><p>{new Date(link.createdAt * 1000).toLocaleString('pt-BR')}</p></section>
+    </div>
+    <footer className="mapping-inspector-actions">
+      <button className="mapping-action" disabled={!isTauri()} onClick={onBrief}><Megaphone size={15} /> Enviar briefing</button>
+      <button className="mapping-action mapping-danger" onClick={onRemove}><Unlink size={15} /> Remover vínculo</button>
+    </footer>
+  </aside>;
 }
 
-export function MappingView() {
+export const MappingView = memo(function MappingView() {
   const sessions = useAppStore((state) => state.sessions);
   const projects = useAppStore((state) => state.workspace.projects);
   const activeProjectId = useAppStore((state) => state.activeProjectId);
-  const setNotice = useAppStore((state) => state.setNotice);
-  const openMappingSession = useAppStore((state) => state.openMappingSession);
+  const reducedEffects = useAppStore((state) => state.preferences.reducedEffects);
   const [scope, setScope] = useState(activeProjectId ?? 'all');
-  const [layout, setLayout] = useState<MappingLayout>(() => mergeMappingLayout(null, []));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const navigationProject = useRef(activeProjectId);
+  const filteredSessions = useMemo(() => sessions.filter((session) => scope === 'all' || projects.some((project) => project.id === scope && sameFolder(session.folder, project.folder))), [sessions, projects, scope]);
+  const ids = useMemo(() => filteredSessions.map((session) => session.id), [filteredSessions]);
+  const { layout, layoutRef, loaded, fresh, setFresh, updateLayout, preferences, updatePreferences } = useMappingLayout(scope, ids);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [inspector, setInspector] = useState(false);
+  const [selectedLink, setSelectedLink] = useState<AgentLink | null>(null);
+  const [links, setLinks] = useState<AgentLink[]>([]);
+  const [linkDrag, setLinkDrag] = useState<LinkDraft | null>(null);
+  const [keyboardLink, setKeyboardLink] = useState<string | null>(null);
   const [newSessionId, setNewSessionId] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [historyAgent, setHistoryAgent] = useState<string | null>(null);
+  const [menu, setMenu] = useState<(Point & { id?: string }) | null>(null);
+  const [full, setFull] = useState(false);
+  const fullRequested = useRef(false);
+  const [maximized, setMaximized] = useState<string | null>(null);
+  const [arranging, setArranging] = useState(false);
+  const [terminalIds, setTerminalIds] = useState<Set<string>>(() => new Set());
   const [canvasSize, setCanvasSize] = useState({ width: 1, height: 1 });
   const canvasRef = useRef<HTMLDivElement>(null);
-  const layoutRef = useRef(layout);
-  const panRef = useRef<{ x: number; y: number; viewport: MappingViewport } | null>(null);
-  const saveTimer = useRef<number | null>(null);
-  const [links, setLinks] = useState<AgentLink[]>([]);
-  const [linkDrag, setLinkDrag] = useState<{ fromId: string; point: Point; targetId: string | null } | null>(null);
-  const [flashing, setFlashing] = useState<Set<string>>(() => new Set());
+  const zoomRef = useRef(layout.viewport.zoom);
+  zoomRef.current = layout.viewport.zoom;
+  const pan = useRef<{ x: number; y: number; viewport: MappingViewport; moved: boolean } | null>(null);
+  const [panning, setPanning] = useState(false);
   const linkDragRef = useRef(linkDrag);
   linkDragRef.current = linkDrag;
-
+  const selectedId = selectedIds.at(-1);
+  const selectedSession = filteredSessions.find((session) => session.id === selectedId);
+  const selectedAgentLinks = useMemo(() => links.filter((link) => link.fromId === selectedId || link.toId === selectedId), [links, selectedId]);
+  const byId = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions]);
   const projectFor = useCallback((session: SessionInfo) => projects.find((project) => sameFolder(session.folder, project.folder)), [projects]);
-  const filteredSessions = useMemo(() => sessions.filter((session) => scope === 'all' || projectFor(session)?.id === scope), [sessions, scope, projectFor]);
-  const sessionIds = filteredSessions.map((session) => session.id).join('|');
-  const visibleModeNodes = useMemo(() => nodesForMappingMode(layout.nodes, layout.mode), [layout.nodes, layout.mode]);
-  const nodesById = useMemo(() => new Map(visibleModeNodes.map((node) => [node.sessionId, node])), [visibleModeNodes]);
-
-  const persist = useCallback((next: MappingLayout) => {
-    void storeLayout(scope, next).catch((error) => setNotice(`Não foi possível salvar o mapa: ${error}`));
-  }, [scope, setNotice]);
-  const updateLayout = useCallback((change: (current: MappingLayout) => MappingLayout, save = false) => {
-    setLayout((current) => {
-      const next = change(current);
-      layoutRef.current = next;
-      if (save) persist(next);
-      return next;
-    });
-  }, [persist]);
-  const scheduleSave = useCallback(() => {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => persist(layoutRef.current), 350);
-  }, [persist]);
-
+  const statusByScope = useActivityStore((state) => preferences.order === 'status' ? JSON.stringify(filteredSessions.map((session) => liveStatus(session, state.activity[session.id]).label)) : '');
+  const suspendedByScope = useAppStore((state) => preferences.order === 'status' ? ids.map((id) => state.memory.sessions?.[id]?.suspended ? '1' : '0').join('') : '');
+  const groupById = useMemo(() => {
+    const statuses: string[] = statusByScope ? JSON.parse(statusByScope) : [];
+    return new Map(filteredSessions.map((session, index) => {
+      if (preferences.order === 'project') {
+        const project = projectFor(session);
+        return [session.id, { key: project?.id ?? 'loose', label: project?.name ?? 'Sessões avulsas' }];
+      }
+      const label = preferences.order === 'provider' ? session.agent : suspendedByScope[index] === '1' ? 'Pausado' : statuses[index] ?? session.status;
+      return [session.id, { key: label, label }];
+    }));
+  }, [filteredSessions, preferences.order, projectFor, statusByScope, suspendedByScope]);
+  const scene = useMemo(() => mappingScene(layout.nodes, layout.mode, preferences, (id) => groupById.get(id) ?? { key: 'loose', label: 'Sessões avulsas' }, links),
+    [layout.nodes, layout.mode, preferences, groupById, links]);
+  const nodesById = useMemo(() => new Map(scene.nodes.map((node) => [node.sessionId, node])), [scene.nodes]);
+  const storedById = useMemo(() => new Map(layout.nodes.map((node) => [node.sessionId, node])), [layout.nodes]);
+  const drawnLinks = useMemo(() => links.flatMap((link) => {
+    const from = nodesById.get(link.fromId);
+    const to = nodesById.get(link.toId);
+    if (!from || !to || from.hidden || to.hidden) return [];
+    const anchors = linkAnchors(from, to, layout.mode);
+    return [{ ...anchors, link, key: linkKey(link.fromId, link.toId), mid: linkMidpoint(anchors.start, anchors.end) }];
+  }), [layout.mode, links, nodesById]);
+  const flashedLink = useMappingEvents((state) => latestMappingEvent(state.events, (event) => event.kind === 'sent' && Boolean(event.relatedId)));
+  const [flash, setFlash] = useState<string | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    setLoaded(false);
-    void loadLayout(scope).then((stored) => {
-      if (cancelled) return;
-      const next = mergeMappingLayout(stored, filteredSessions.map((session) => session.id));
-      layoutRef.current = next;
-      setLayout(next);
-      setLoaded(true);
-    }).catch((error) => { if (!cancelled) { setNotice(`Não foi possível carregar o mapa: ${error}`); setLoaded(true); } });
-    return () => { cancelled = true; };
-    // Session additions are merged by the effect below without reloading persisted geometry.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope]);
+    if (!flashedLink?.relatedId || Date.now() - flashedLink.at > 1600) return;
+    setFlash(linkKey(flashedLink.sessionId, flashedLink.relatedId));
+    const timer = window.setTimeout(() => setFlash(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [flashedLink]);
 
-  useEffect(() => {
-    if (!loaded) return;
-    updateLayout((current) => mergeMappingLayout(current, filteredSessions.map((session) => session.id)));
-  }, [loaded, sessionIds, filteredSessions, updateLayout]);
-
+  const setNotice = useAppStore.getState().setNotice;
+  const name = useCallback((id: string) => { const session = byId.get(id); return session ? sessionLabel(session) : 'Sessão indisponível'; }, [byId]);
   useEffect(() => {
     const host = canvasRef.current;
     if (!host) return;
     const measure = () => setCanvasSize({ width: host.clientWidth, height: host.clientHeight });
     measure();
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', measure);
-      return () => window.removeEventListener('resize', measure);
-    }
-    const resize = new ResizeObserver(measure);
-    resize.observe(host);
-    return () => resize.disconnect();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(host);
+    window.addEventListener('resize', measure);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
   }, []);
-
-  useEffect(() => () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); }, []);
-
   useEffect(() => {
     let cancelled = false;
-    void listLinks().then((value) => { if (!cancelled) setLinks(value); })
-      .catch((error) => { if (!cancelled) setNotice(`Não foi possível carregar os links: ${error}`); });
+    void listLinks().then((value) => { if (!cancelled) setLinks(value); }).catch((error) => { if (!cancelled) setNotice(String(error)); });
     return () => { cancelled = true; };
   }, [setNotice]);
 
-  useEffect(() => {
-    if (!isTauri()) return;
-    const timers: number[] = [];
-    const unlisten = listen<{ id: number; fromId: string | null; toId: string; error: string | null }>('agent-message', (event) => {
-      const { fromId, toId, error } = event.payload;
-      if (error) { setNotice(`Mensagem entre agentes não entregue: ${error}`); return; }
-      if (!fromId) return;
-      const key = linkKey(fromId, toId);
-      setFlashing((current) => new Set(current).add(key));
-      timers.push(window.setTimeout(() => setFlashing((current) => { const next = new Set(current); next.delete(key); return next; }), 1600));
-    });
-    return () => { timers.forEach((timer) => window.clearTimeout(timer)); void unlisten.then((stop) => stop()); };
-  }, [setNotice]);
-
-  const toWorld = useCallback((clientX: number, clientY: number): Point => {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    const { viewport } = layoutRef.current;
-    return { x: (clientX - (rect?.left ?? 0) - viewport.x) / viewport.zoom, y: (clientY - (rect?.top ?? 0) - viewport.y) / viewport.zoom };
+  const changeScope = useCallback((next: string) => {
+    setScope(next); setSelectedIds([]); setSelectedLink(null); setInspector(false); setMaximized(null); setKeyboardLink(null); setLinkDrag(null); setHistoryAgent(null);
   }, []);
-
-  const startLink = useCallback((fromId: string, event: React.PointerEvent<HTMLElement>) => {
-    if (event.button > 0) return;
-    event.preventDefault();
-    setSelectedId(fromId);
-    setLinkDrag({ fromId, point: toWorld(event.clientX, event.clientY), targetId: null });
-  }, [toWorld]);
-
-  const linkActive = linkDrag !== null;
   useEffect(() => {
-    if (!linkActive) return;
-    const targetAt = (event: PointerEvent) => {
-      const element = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
-      return element?.closest<HTMLElement>('[data-session-id]')?.dataset.sessionId ?? null;
-    };
-    const move = (event: PointerEvent) => {
-      const targetId = targetAt(event);
-      setLinkDrag((current) => current && { ...current, point: toWorld(event.clientX, event.clientY), targetId: targetId === current.fromId ? null : targetId });
-    };
-    const up = (event: PointerEvent) => {
-      const targetId = targetAt(event);
-      const current = linkDragRef.current;
-      setLinkDrag(null);
-      if (current && targetId && targetId !== current.fromId) {
-        void createLink(current.fromId, targetId).then(setLinks).catch((error) => setNotice(`Não foi possível criar o link: ${error instanceof Error ? error.message : error}`));
-      }
-    };
-    const cancel = (event: KeyboardEvent) => { if (event.key === 'Escape') setLinkDrag(null); };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('keydown', cancel);
-    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('keydown', cancel); };
-  }, [linkActive, setNotice, toWorld]);
-
-  const removeLink = useCallback((link: AgentLink) => {
-    void deleteLink(link.fromId, link.toId).then(setLinks).catch((error) => setNotice(`Não foi possível remover o link: ${error}`));
-  }, [setNotice]);
-  const introduce = useCallback((fromId: string) => {
-    void introduceLeader(fromId)
-      .then(() => setNotice('Briefing enviado ao agente líder.'))
-      .catch((error) => setNotice(`Não foi possível avisar o líder: ${error instanceof Error ? error.message : error}`));
-  }, [setNotice]);
-
+    if (navigationProject.current === activeProjectId) return;
+    navigationProject.current = activeProjectId;
+    changeScope(activeProjectId ?? 'all');
+  }, [activeProjectId, changeScope]);
+  useEffect(() => { if (scope !== 'all' && !projects.some((project) => project.id === scope)) changeScope('all'); }, [scope, projects, changeScope]);
+  const closeInspector = useCallback(() => { setSelectedLink(null); setInspector(false); }, []);
+  const select = useCallback((id: string, multiple = false) => {
+    setSelectedLink(null);
+    setInspector(true);
+    setSelectedIds((current) => multiple ? current.includes(id) ? current.filter((item) => item !== id) : [...current, id] : current.includes(id) ? current : [id]);
+  }, []);
+  const inspectLink = useCallback((link: AgentLink) => { setSelectedLink(link); setInspector(true); }, []);
   const patchNode = useCallback((id: string, patch: Partial<MappingNode>, save = false) => {
-    updateLayout((current) => ({ ...current, nodes: current.nodes.map((node) => node.sessionId === id ? patchMappingNode(node, patch, current.mode) : node) }), save);
-  }, [updateLayout]);
+    if (patch.hidden) setMaximized((current) => current === id ? null : current);
+    updateLayout((current) => {
+      const source = current.nodes.find((node) => node.sessionId === id);
+      if (!source) return current;
+      if (patch.x === undefined && patch.y === undefined) {
+        return { ...current, nodes: current.nodes.map((node) => node === source ? patchMappingNode(node, patch, current.mode) : node) };
+      }
+      const position = current.mode === 'architecture' ? source.architecturePosition ?? source : source;
+      const dx = (patch.x ?? position.x) - position.x;
+      const dy = (patch.y ?? position.y) - position.y;
+      return { ...current, nodes: current.nodes.map((node) => {
+        if (node === source) return patchMappingNode(node, patch, current.mode);
+        if (!selectedIds.includes(id) || !selectedIds.includes(node.sessionId)) return node;
+        const origin = current.mode === 'architecture' ? node.architecturePosition ?? node : node;
+        return patchMappingNode(node, { x: origin.x + dx, y: origin.y + dy }, current.mode);
+      }) };
+    }, save);
+  }, [updateLayout, selectedIds]);
 
-  const focusNode = useCallback((id: string) => {
-    const { nodes, mode, viewport: currentViewport } = layoutRef.current;
-    const node = nodesForMappingMode(nodes, mode).find((item) => item.sessionId === id);
+  const center = useCallback((x: number, y: number) => {
     const host = canvasRef.current;
-    if (!node || !host) return;
-    const size = nodeDisplaySize(node, mode);
-    const viewport = { ...currentViewport,
-      x: host.clientWidth / 2 - (node.x + size.width / 2) * currentViewport.zoom,
-      y: host.clientHeight / 2 - (node.y + size.height / 2) * currentViewport.zoom,
-    };
-    setSelectedId(id);
-    updateLayout((current) => ({ ...current, viewport }), true);
+    if (!host) return;
+    updateLayout((current) => ({ ...current, viewport: {
+      ...current.viewport, x: host.clientWidth / 2 - x * current.viewport.zoom, y: host.clientHeight / 2 - y * current.viewport.zoom,
+    } }), true);
   }, [updateLayout]);
-
+  const focusNode = useCallback((id: string) => {
+    const node = nodesById.get(id);
+    if (!node || node.hidden) {
+      const session = byId.get(id);
+      if (!session) return;
+      const targetScope = projectFor(session)?.id ?? 'all';
+      if (scope !== targetScope && scope !== 'all') changeScope(targetScope);
+      else {
+        if (storedById.get(id)?.hidden) patchNode(id, { hidden: false }, true);
+        if (preferences.collapsed.length) updatePreferences({ collapsed: [] });
+      }
+      setNewSessionId(id);
+      return;
+    }
+    const size = nodeDisplaySize(node, layout.mode);
+    select(id);
+    // The inspector consumes horizontal space after selection on wide windows.
+    window.requestAnimationFrame(() => { center(node.x + size.width / 2, node.y + size.height / 2); });
+  }, [nodesById, byId, projectFor, scope, changeScope, storedById, patchNode, preferences.collapsed, updatePreferences, layout.mode, select, center]);
   useEffect(() => {
-    if (!loaded || !newSessionId || !nodesById.has(newSessionId)) return;
+    if (!loaded || !newSessionId || !nodesById.get(newSessionId) || nodesById.get(newSessionId)?.hidden) return;
     focusNode(newSessionId);
     setNewSessionId(null);
   }, [loaded, newSessionId, nodesById, focusNode]);
 
-  const createAgent = () => openMappingSession(scope === 'all' ? null : scope, (session) => {
-    if (scope !== 'all' && projectFor(session)?.id !== scope) setScope('all');
-    setNewSessionId(session.id);
-  });
-
-  const fitAll = useCallback((save = true) => {
+  const fit = useCallback(() => {
     const host = canvasRef.current;
-    const { nodes, mode } = layoutRef.current;
-    const bounds = mappingBounds(nodesForMappingMode(nodes, mode), mode);
-    if (!host || !bounds) return;
-    const zoom = clamp(Math.min((host.clientWidth - 96) / Math.max(bounds.width, 1), (host.clientHeight - 96) / Math.max(bounds.height, 1)), MIN_ZOOM, 1.25);
-    const viewport = {
-      zoom,
-      x: (host.clientWidth - bounds.width * zoom) / 2 - bounds.left * zoom,
-      y: (host.clientHeight - bounds.height * zoom) / 2 - bounds.top * zoom,
-    };
-    updateLayout((current) => ({ ...current, viewport }), save);
+    const geometry = mappingBounds(scene.nodes, layout.mode);
+    const bounds = scene.groups.reduce((current, group) => ({
+      left: Math.min(current.left, group.x), top: Math.min(current.top, group.y),
+      right: Math.max(current.right, group.x + group.width), bottom: Math.max(current.bottom, group.y + group.height),
+    }), geometry ?? { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
+    if (!host || !Number.isFinite(bounds.left) || host.clientWidth < 2 || host.clientHeight < 2) return;
+    const width = bounds.right - bounds.left;
+    const height = bounds.bottom - bounds.top;
+    const zoom = Math.min(1, clampZoom(Math.min((host.clientWidth - 96) / width, (host.clientHeight - 80) / height)));
+    updateLayout((current) => ({ ...current, viewport: {
+      zoom, x: (host.clientWidth - width * zoom) / 2 - bounds.left * zoom, y: (host.clientHeight - height * zoom) / 2 - bounds.top * zoom,
+    } }), true);
+  }, [layout.mode, scene, updateLayout]);
+  useEffect(() => {
+    if (fresh && loaded && scene.nodes.length && canvasSize.width > 1 && canvasSize.height > 1) { fit(); setFresh(false); }
+  }, [fresh, loaded, scene.nodes.length, canvasSize, fit, setFresh]);
+  useEffect(() => {
+    if (!arranging) return;
+    const timer = window.setTimeout(() => setArranging(false), 420);
+    return () => window.clearTimeout(timer);
+  }, [arranging]);
+  const changeOrder = useCallback((order: MappingOrder) => { setArranging(true); updatePreferences({ order }); }, [updatePreferences]);
+  const changeMode = useCallback((mode: MappingMode) => {
+    setMaximized(null);
+    updateLayout((current) => ({ ...current, mode }), true);
   }, [updateLayout]);
-
-  const setZoom = useCallback((zoom: number, clientX?: number, clientY?: number) => {
-    const host = canvasRef.current;
-    if (!host) return;
-    const rect = host.getBoundingClientRect();
-    updateLayout((current) => {
-      const nextZoom = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
-      const anchorX = (clientX ?? rect.left + rect.width / 2) - rect.left;
-      const anchorY = (clientY ?? rect.top + rect.height / 2) - rect.top;
-      const worldX = (anchorX - current.viewport.x) / current.viewport.zoom;
-      const worldY = (anchorY - current.viewport.y) / current.viewport.zoom;
-      return { ...current, viewport: { zoom: nextZoom, x: anchorX - worldX * nextZoom, y: anchorY - worldY * nextZoom } };
+  const visibleTerminals = useMemo(() => {
+    if (!loaded || layout.mode !== 'terminal') return NO_VISIBLE_TERMINALS;
+    const { x, y, zoom } = layout.viewport;
+    return new Set(scene.nodes.filter((node) => !node.hidden &&
+      (maximized ? maximized === node.sessionId : x + node.x * zoom <= canvasSize.width + 96 &&
+        y + node.y * zoom <= canvasSize.height + 96 &&
+        x + (node.x + node.width) * zoom >= -96 && y + (node.y + node.height) * zoom >= -96))
+      .map((node) => node.sessionId));
+  }, [loaded, layout.mode, layout.viewport, scene.nodes, canvasSize, maximized]);
+  useEffect(() => {
+    setTerminalIds((current) => {
+      const ids = [...visibleTerminals].filter((id) => !current.has(id) && byId.get(id)?.status === 'rodando');
+      return ids.length ? new Set([...current, ...ids]) : current;
     });
-    scheduleSave();
-  }, [scheduleSave, updateLayout]);
+  }, [visibleTerminals, byId]);
+  const openTerminal = useCallback((id: string) => {
+    setTerminalIds((current) => current.has(id) ? current : new Set([...current, id]));
+    select(id);
+    updateLayout((current) => ({
+      ...current, mode: 'terminal', nodes: current.nodes.map((node) => node.sessionId === id ? { ...node, minimized: false, hidden: false } : node),
+      viewport: { ...current.viewport, zoom: Math.max(.75, current.viewport.zoom) },
+    }), true);
+    setNewSessionId(id);
+  }, [select, updateLayout]);
+  const returnToArchitecture = useCallback((id: string) => { changeMode('architecture'); setNewSessionId(id); }, [changeMode]);
+  const maximize = useCallback((id: string) => {
+    setMaximized((current) => current === id ? null : id);
+    patchNode(id, { minimized: false }, true);
+    closeInspector();
+  }, [patchNode, closeInspector]);
+  const restore = useCallback(() => updateLayout((current) => ({ ...current, nodes: current.nodes.map((node) => node.hidden ? { ...node, hidden: false } : node) }), true), [updateLayout]);
 
+  const setZoom = useCallback((value: number, clientX?: number, clientY?: number) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const zoom = clampZoom(value);
+    const x = clientX === undefined ? rect.width / 2 : clientX - rect.left;
+    const y = clientY === undefined ? rect.height / 2 : clientY - rect.top;
+    updateLayout((current) => ({
+      ...current, viewport: { zoom, x: x - (x - current.viewport.x) * zoom / current.viewport.zoom, y: y - (y - current.viewport.y) * zoom / current.viewport.zoom },
+    }), true);
+  }, [updateLayout]);
+  const changeZoom = useCallback((delta: number) => setZoom(delta === 0 ? 1 : zoomRef.current + delta), [setZoom]);
   useEffect(() => {
     const host = canvasRef.current;
     if (!host) return;
-    const handleWheel = (event: WheelEvent) => {
-      if ((event.target as Element).closest('.terminal-view')) return;
+    const wheel = (event: WheelEvent) => {
+      if ((event.target as Element).closest('.terminal-view, .mapping-canvas-controls, .mapping-minimap')) return;
       event.preventDefault();
-      if (event.ctrlKey || event.metaKey) {
-        setZoom(layoutRef.current.viewport.zoom * Math.exp(-event.deltaY * 0.002), event.clientX, event.clientY);
+      if (event.shiftKey && !event.ctrlKey && !event.metaKey) {
+        updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: current.viewport.x - (event.deltaX || event.deltaY) } }), true);
+      } else if (Math.abs(event.deltaX) > Math.abs(event.deltaY) && !event.ctrlKey && !event.metaKey) {
+        updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: current.viewport.x - event.deltaX, y: current.viewport.y - event.deltaY } }), true);
       } else {
-        updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: current.viewport.x - event.deltaX, y: current.viewport.y - event.deltaY } }));
-        scheduleSave();
+        const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 240 : 1);
+        setZoom(layoutRef.current.viewport.zoom * Math.exp(-delta * .002), event.clientX, event.clientY);
       }
     };
-    host.addEventListener('wheel', handleWheel, { passive: false });
-    return () => host.removeEventListener('wheel', handleWheel);
-  }, [scheduleSave, setZoom, updateLayout]);
+    host.addEventListener('wheel', wheel, { passive: false });
+    return () => host.removeEventListener('wheel', wheel);
+  }, [setZoom, updateLayout, layoutRef]);
 
-  const restoreHidden = () => updateLayout((current) => ({ ...current, nodes: current.nodes.map((node) => ({ ...node, hidden: false })) }), true);
-  const hiddenCount = layout.nodes.filter((node) => node.hidden).length;
-  const runningCount = filteredSessions.filter((session) => session.status === 'rodando').length;
-  const grid = 24 * layout.viewport.zoom;
-  const visibleIds = new Set(filteredSessions.filter((session) => { const node = nodesById.get(session.id); return node && !node.hidden; }).map((session) => session.id));
-  const drawnLinks = links.flatMap((link) => {
-    const from = nodesById.get(link.fromId);
-    const to = nodesById.get(link.toId);
-    if (!from || !to || !visibleIds.has(link.fromId) || !visibleIds.has(link.toId)) return [];
-    const { start, end } = linkAnchors(from, to, layout.mode);
-    return [{ link, start, end, mid: linkMidpoint(start, end), key: linkKey(link.fromId, link.toId) }];
-  });
-  const dragSource = linkDrag ? nodesById.get(linkDrag.fromId) : undefined;
-  const dragSize = dragSource ? nodeDisplaySize(dragSource, layout.mode) : null;
-  const dragStart = dragSource && dragSize ? { x: dragSource.x + dragSize.width / 2, y: dragSource.y + dragSize.height / 2 } : null;
-  const agentName = (id: string) => sessions.find((session) => session.id === id)?.agent ?? 'Agente';
+  const commitLink = useCallback((fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    void createLink(fromId, toId).then(setLinks).catch((error) => setNotice(String(error)));
+  }, [setNotice]);
+  const startLink = useCallback((fromId: string, event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    setKeyboardLink(null);
+    select(fromId);
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const view = layoutRef.current.viewport;
+    setLinkDrag({ fromId, point: { x: (event.clientX - (rect?.left ?? 0) - view.x) / view.zoom, y: (event.clientY - (rect?.top ?? 0) - view.y) / view.zoom }, targetId: null });
+  }, [layoutRef, select]);
+  const dragging = linkDrag !== null;
+  useEffect(() => {
+    if (!dragging) return;
+    const targetAt = (event: PointerEvent) => document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-session-id]')?.dataset.sessionId ?? null;
+    const move = (event: PointerEvent) => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const view = layoutRef.current.viewport;
+      const target = targetAt(event);
+      setLinkDrag((current) => current && { ...current, targetId: target === current.fromId ? null : target,
+        point: { x: (event.clientX - rect.left - view.x) / view.zoom, y: (event.clientY - rect.top - view.y) / view.zoom } });
+    };
+    const up = (event: PointerEvent) => {
+      const current = linkDragRef.current;
+      const target = targetAt(event);
+      setLinkDrag(null);
+      if (current && target) commitLink(current.fromId, target);
+    };
+    const cancel = () => setLinkDrag(null);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', cancel); };
+  }, [dragging, commitLink, layoutRef]);
+  const remove = async (link: AgentLink) => {
+    if (!(await confirmAction(`Remover o vínculo de ${name(link.fromId)} para ${name(link.toId)}?`))) return;
+    try { setLinks(await deleteLink(link.fromId, link.toId)); closeInspector(); } catch (error) { setNotice(String(error)); }
+  };
+  const brief = async (link: AgentLink) => {
+    if (!(await confirmAction(`Enviar o briefing de vínculos ao terminal de ${name(link.fromId)}?`))) return;
+    try { await introduceLeader(link.fromId); setNotice('Briefing enviado ao agente líder.'); } catch (error) { setNotice(String(error)); }
+  };
 
-  return <section className="mapping-view">
-    <header className="mapping-topbar">
-      <div className="mapping-heading"><span><Workflow size={16} /></span><div><h1>Mapeamento</h1><small>Workspace visual de agentes</small></div></div>
-      <span className="mapping-divider" aria-hidden="true" />
-      <label className="mapping-project-filter"><FolderTree size={14} /><select aria-label="Filtrar projeto" value={scope} onChange={(event) => setScope(event.target.value)}><option value="all">Todos os projetos</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><ChevronDown size={13} className="mapping-select-caret" /></label>
-      <div className="mapping-summary">
-        <span className={`mapping-chip ${runningCount ? 'live' : ''}`}><i />{runningCount} ativo(s)</span>
-        <span className="mapping-chip muted">{filteredSessions.length} agente(s) no mapa</span>
-        {drawnLinks.length > 0 && <span className="mapping-chip muted"><Cable size={11} />{drawnLinks.length} link(s)</span>}
+  const createAgent = useCallback(() => useAppStore.getState().openMappingSession(scope === 'all' ? null : scope, (session) => {
+    if (scope !== 'all' && projectFor(session)?.id !== scope) changeScope('all');
+    setNewSessionId(session.id);
+  }), [scope, projectFor, changeScope]);
+  const openNodeMenu = useCallback((id: string, x: number, y: number) => setMenu({ id, x, y }), []);
+  const openOptions = useCallback((point: Point) => setMenu(point), []);
+  const focusSelected = useCallback(() => { if (selectedId) focusNode(selectedId); }, [selectedId, focusNode]);
+  const toggleMinimap = useCallback(() => updatePreferences({ minimap: !preferences.minimap }), [preferences.minimap, updatePreferences]);
+  const toggleTimeline = useCallback(() => updatePreferences({ timeline: !preferences.timeline }), [preferences.timeline, updatePreferences]);
+  const toggleFull = useCallback(() => setFull((value) => !value), []);
+  useEffect(() => {
+    if (!full || !isTauri()) return;
+    let disposed = false;
+    const window = getCurrentWindow();
+    const enter = (async () => {
+      if (await window.isFullscreen() || disposed) return;
+      await window.setFullscreen(true);
+      fullRequested.current = true;
+    })().catch((error) => setNotice(String(error)));
+    return () => {
+      disposed = true;
+      void enter.then(async () => {
+        if (!fullRequested.current) return;
+        fullRequested.current = false;
+        await window.setFullscreen(false);
+      }).catch((error) => setNotice(String(error)));
+    };
+  }, [full, setNotice]);
+  const onTimelineSelect = useCallback((id: string, centerAgent: boolean) => {
+    if (centerAgent) focusNode(id);
+    else if (byId.has(id)) { setSelectedIds([id]); setSelectedLink(null); }
+  }, [focusNode, byId]);
+  const openTimelineHistory = useCallback(() => { setHistoryAgent(selectedId ?? null); updatePreferences({ timeline: true }); }, [selectedId, updatePreferences]);
+  const keys = (event: React.KeyboardEvent<HTMLElement>) => {
+    const element = event.target as HTMLElement;
+    if (element.closest('input, textarea, select, .terminal-view, [contenteditable]') || event.ctrlKey || event.altKey || event.metaKey) return;
+    const key = event.key.toLowerCase();
+    if (key === 'escape') {
+      if (menu) return;
+      if (linkDrag || keyboardLink) { setLinkDrag(null); setKeyboardLink(null); }
+      else if (maximized) setMaximized(null);
+      else if (full) setFull(false);
+      else closeInspector();
+      return;
+    }
+    if (element.closest('button')) return;
+    if (key === 'f') fit();
+    else if (key === 'c') focusSelected();
+    else if (key === '0') changeZoom(0);
+    else if (key === '+' || key === '=') changeZoom(.125);
+    else if (key === '-') changeZoom(-.125);
+    else if (key === 't' && selectedId) { if (layout.mode === 'terminal') returnToArchitecture(selectedId); else openTerminal(selectedId); }
+    else if (key === 'l' && selectedId) {
+      if (keyboardLink && keyboardLink !== selectedId) { commitLink(keyboardLink, selectedId); setKeyboardLink(null); setNotice(null); }
+      else { setKeyboardLink(selectedId); setNotice('Selecione o agente de destino e pressione L para vincular.'); }
+    } else return;
+    event.preventDefault();
+  };
+  const menuLabels = MappingOptionsLabels(preferences);
+  const menuItems: MenuItem[] = menu?.id ? [
+    { label: 'Abrir terminal', icon: <TerminalSquare size={15} />, onSelect: () => openTerminal(menu.id!) },
+    { label: 'Centralizar', icon: <Crosshair size={15} />, onSelect: () => focusNode(menu.id!) },
+    { label: 'Inspecionar agente', onSelect: () => select(menu.id!) },
+    { label: 'Vincular a outro agente', icon: <Cable size={15} />, onSelect: () => { select(menu.id!); setKeyboardLink(menu.id!); setNotice('Selecione o agente de destino e pressione L para vincular.'); } },
+    { label: 'Ocultar do mapa', icon: <EyeOff size={15} />, onSelect: () => patchNode(menu.id!, { hidden: true }, true) },
+  ] : [
+    { label: menuLabels.grid, onSelect: () => updatePreferences({ grid: !preferences.grid }) },
+    { label: menuLabels.minimap, onSelect: toggleMinimap },
+    { label: menuLabels.timeline, onSelect: toggleTimeline },
+    { label: menuLabels.motion, onSelect: () => updatePreferences({ motion: !preferences.motion }) },
+  ];
+  const semanticZoom: SemanticZoom = layout.viewport.zoom < .62 ? 'far' : layout.viewport.zoom >= 1.25 ? 'near' : 'normal';
+  const grid = Math.max(12, 24 * layout.viewport.zoom);
+  const linkSource = linkDrag && nodesById.get(linkDrag.fromId);
+  const fromSize = linkSource && nodeDisplaySize(linkSource, layout.mode);
+  const dragStart = linkSource && fromSize ? { x: linkSource.x + fromSize.width, y: linkSource.y + fromSize.height / 2 } : null;
+  const showInspector = inspector && !full && !maximized && Boolean(selectedSession || selectedLink);
+  const edgeBounds = useMemo(() => mappingBounds(scene.nodes, layout.mode), [scene.nodes, layout.mode]);
+  const svgX = Math.min(edgeBounds?.left ?? 0, linkDrag?.point.x ?? Infinity) - 128;
+  const svgY = Math.min(edgeBounds?.top ?? 0, linkDrag?.point.y ?? Infinity) - 128;
+  const svgW = Math.max(edgeBounds?.right ?? 1, linkDrag?.point.x ?? -Infinity) - svgX + 128;
+  const svgH = Math.max(edgeBounds?.bottom ?? 1, linkDrag?.point.y ?? -Infinity) - svgY + 128;
+
+  const targetLinkId = linkDrag?.targetId;
+  const agentWindows = useMemo(() => loaded && filteredSessions.map((session) => {
+    const stored = storedById.get(session.id);
+    const visible = nodesById.get(session.id);
+    if (!stored || (!visible && !terminalIds.has(session.id))) return null;
+    const node = visible ?? { ...stored, hidden: true };
+    const keepTerminal = terminalIds.has(session.id) || (session.status === 'rodando' && visibleTerminals.has(session.id));
+    return <AgentWindow key={session.id} session={session} project={projectFor(session)} node={node} terminalNode={layout.mode === 'terminal' ? node : stored}
+      mode={layout.mode} semanticZoom={semanticZoom} selected={selectedIds.includes(session.id)} linkTarget={targetLinkId === session.id || keyboardLink === session.id}
+      movable={preferences.order === 'free'} keepTerminal={keepTerminal} maximized={maximized === session.id} zoomRef={zoomRef}
+      onSelect={select} onFocus={focusNode} onTerminal={openTerminal} onArchitecture={returnToArchitecture} onMaximize={maximize}
+      onChange={patchNode} onLinkStart={startLink} onLinkTarget={select} onMenu={openNodeMenu} />;
+  }), [
+    loaded, filteredSessions, storedById, nodesById, terminalIds, visibleTerminals, projectFor, layout.mode,
+    semanticZoom, selectedIds, targetLinkId, keyboardLink, preferences.order, maximized,
+    select, focusNode, openTerminal, returnToArchitecture, maximize, patchNode, startLink, openNodeMenu,
+  ]);
+
+  return <section className={`mapping-view ${full ? 'mapping-full' : ''} ${!preferences.motion || reducedEffects ? 'mapping-reduced' : ''}`} onKeyDown={keys}>
+    <MappingToolbar scope={scope} projects={projects} running={filteredSessions.filter((session) => session.status === 'rodando').length}
+      hidden={layout.nodes.filter((node) => node.hidden).length} mode={layout.mode} order={preferences.order} full={full} ready={loaded}
+      onScope={changeScope} onMode={changeMode} onCreate={createAgent} onOrder={changeOrder} onFit={fit} onFull={toggleFull} onOptions={openOptions} onRestore={restore} />
+    <div className={`mapping-workspace ${showInspector ? 'with-inspector' : ''}`}>
+      <div ref={canvasRef} tabIndex={0} role="region" aria-label="Canvas de agentes" className={`mapping-canvas ${preferences.grid ? 'with-grid' : ''} ${panning ? 'panning' : ''} ${linkDrag ? 'linking' : ''}`}
+        style={{ backgroundSize: `${grid}px ${grid}px`, backgroundPosition: `${layout.viewport.x % grid}px ${layout.viewport.y % grid}px` }}
+        onPointerDown={(event) => {
+          if (maximized || (event.button !== 0 && event.button !== 1)) return;
+          if ((event.target as Element).closest('.mapping-node, .mapping-minimap, .mapping-link-controls, button')) return;
+          canvasRef.current?.focus({ preventScroll: true });
+          pan.current = { x: event.clientX, y: event.clientY, viewport: layout.viewport, moved: false };
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          const start = pan.current;
+          if (!start) return;
+          const dx = event.clientX - start.x;
+          const dy = event.clientY - start.y;
+          if (!start.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+          if (!start.moved) { start.moved = true; setPanning(true); }
+          updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: start.viewport.x + dx, y: start.viewport.y + dy } }));
+        }}
+        onPointerUp={() => {
+          if (pan.current?.moved) updateLayout((current) => current, true);
+          else if (pan.current) { setSelectedIds([]); closeInspector(); }
+          pan.current = null;
+          setPanning(false);
+        }}
+        onPointerCancel={() => { if (pan.current?.moved) updateLayout((current) => current, true); pan.current = null; setPanning(false); }}>
+        <div className={`mapping-world ${arranging ? 'arranging' : ''} ${maximized ? 'terminal-maximized' : ''}`}
+          style={{ transform: maximized ? undefined : `translate(${layout.viewport.x}px, ${layout.viewport.y}px) scale(${layout.viewport.zoom})` }}>
+          {scene.groups.map((group) => <div key={group.key} className="mapping-group" style={{ transform: `translate(${group.x}px, ${group.y}px)`, width: group.width, height: group.height }}>
+            <button aria-expanded={!group.collapsed} onClick={() => {
+              setArranging(true);
+              updatePreferences({ collapsed: group.collapsed ? preferences.collapsed.filter((key) => key !== group.key) : [...preferences.collapsed, group.key] });
+            }}>{group.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}{group.label}<small>{group.count}</small></button>
+          </div>)}
+          {(drawnLinks.length > 0 || linkDrag) && <svg className="mapping-edges" aria-hidden="true" style={{ left: svgX, top: svgY, width: svgW, height: svgH }} viewBox={`${svgX} ${svgY} ${svgW} ${svgH}`}>
+            <defs><marker id="mapping-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
+            {drawnLinks.map(({ key, start, end }) => <path key={key} className={`mapping-edge ${flash === key ? 'active' : ''} ${selectedLink && key === linkKey(selectedLink.fromId, selectedLink.toId) ? 'selected' : ''}`} d={linkPath(start, end)} markerEnd="url(#mapping-arrow)" vectorEffect="non-scaling-stroke" />)}
+            {linkDrag && dragStart && <path className="mapping-edge draft" d={linkPath(dragStart, linkDrag.point)} markerEnd="url(#mapping-arrow)" vectorEffect="non-scaling-stroke" />}
+          </svg>}
+          {drawnLinks.map(({ key, link, mid }) => <button key={key} className="mapping-link-controls"
+            aria-label={`Inspecionar vínculo ${name(link.fromId)} → ${name(link.toId)}`} title={`${name(link.fromId)} → ${name(link.toId)}`}
+            style={{ transform: `translate(${mid.x}px, ${mid.y}px) translate(-50%, -50%) scale(${1 / Math.max(layout.viewport.zoom, .55)})` }}
+            onClick={() => inspectLink(link)}><Cable size={12} /><span>Comando</span></button>)}
+          {agentWindows}
+        </div>
+        {(!loaded || (filteredSessions.length === 0 && layout.nodes.length === 0)) && <div className="mapping-empty">
+          <span><Workflow size={28} /></span>
+          <strong>{loaded ? 'Nenhuma sessão neste projeto' : 'Carregando o mapa…'}</strong>
+          {loaded && <button className="mapping-action mapping-create" onClick={createAgent}>Criar agente</button>}
+        </div>}
+        {!maximized && <>
+          <CanvasControls zoom={layout.viewport.zoom} minimap={preferences.minimap} canFocus={Boolean(selectedId)} changeZoom={changeZoom} setMinimap={toggleMinimap} onFocus={focusSelected} />
+          {preferences.minimap && <MappingMinimap nodes={scene.nodes} sessions={filteredSessions} mode={layout.mode} viewport={layout.viewport} canvas={canvasSize} edges={drawnLinks} onCenter={center} />}
+        </>}
       </div>
-      <div className="mapping-mode" role="group" aria-label="Modo de visualização">
-        <button className={layout.mode === 'terminal' ? 'active' : ''} aria-pressed={layout.mode === 'terminal'} onClick={() => updateLayout((current) => ({ ...current, mode: 'terminal' }), true)}><TerminalSquare size={14} /> Terminal</button>
-        <button className={layout.mode === 'architecture' ? 'active' : ''} aria-pressed={layout.mode === 'architecture'} onClick={() => updateLayout((current) => ({ ...current, mode: 'architecture' }), true)}><Network size={14} /> Arquitetura</button>
-      </div>
-      <div className="mapping-actions">
-        <button className="mapping-action mapping-create" aria-label="Novo agente no mapa" title="Novo agente" onClick={createAgent}><Plus size={15} /> <span>Novo agente</span></button>
-        {hiddenCount > 0 && <button className="mapping-action attention" onClick={restoreHidden}><Eye size={13} /> Exibir {hiddenCount} oculto(s)</button>}
-        <button className="mapping-action" title="Organizar agentes por projeto" onClick={() => { const next = arrangeMappingNodes(layoutRef.current.nodes, (id) => { const session = filteredSessions.find((item) => item.id === id); return session ? projectFor(session)?.id ?? 'loose' : 'loose'; }, layoutRef.current.mode); updateLayout((current) => ({ ...current, nodes: next }), true); window.requestAnimationFrame(() => fitAll()); }}><LayoutGrid size={14} /> <span>Organizar agentes</span></button>
-        <button className="mapping-action" title="Ajustar todos à tela" onClick={() => fitAll()}><Scan size={14} /> <span>Ajustar</span></button>
-      </div>
-    </header>
-    <div
-      ref={canvasRef}
-      className={`mapping-canvas ${layout.mode === 'architecture' ? 'mapping-architecture' : ''} ${panRef.current ? 'panning' : ''} ${linkDrag ? 'linking' : ''}`}
-      style={{ backgroundSize: `${grid}px ${grid}px`, backgroundPosition: `${layout.viewport.x % grid}px ${layout.viewport.y % grid}px` }}
-      onPointerDown={(event) => {
-        if (event.button !== 0 || (event.target as HTMLElement).closest('.mapping-node, .mapping-minimap, .mapping-link-controls')) return;
-        panRef.current = { x: event.clientX, y: event.clientY, viewport: layout.viewport };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }}
-      onPointerMove={(event) => {
-        const pan = panRef.current;
-        if (!pan) return;
-        updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: pan.viewport.x + event.clientX - pan.x, y: pan.viewport.y + event.clientY - pan.y } }));
-      }}
-      onPointerUp={(event) => { if (panRef.current) { panRef.current = null; event.currentTarget.releasePointerCapture(event.pointerId); persist(layoutRef.current); } }}
-      onPointerCancel={() => { panRef.current = null; }}
-    >
-      <div className="mapping-world" style={{ transform: `translate(${layout.viewport.x}px, ${layout.viewport.y}px) scale(${layout.viewport.zoom})` }}>
-        {layout.mode === 'terminal' && <><div className="mapping-axis axis-x"><span>X</span></div><div className="mapping-axis axis-y"><span>Y</span></div><div className="mapping-origin">0,0</div></>}
-        <svg className="mapping-edges" aria-hidden="true">
-          <defs>
-            <marker id="mapping-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
-          </defs>
-          <g transform={`translate(${EDGE_ORIGIN} ${EDGE_ORIGIN})`}>
-            {drawnLinks.map(({ key, start, end }) => <path key={key} className={`mapping-edge ${flashing.has(key) ? 'active' : ''}`} d={linkPath(start, end)} markerEnd="url(#mapping-arrow)" />)}
-            {linkDrag && dragStart && <path className="mapping-edge draft" d={linkPath(dragStart, linkDrag.point)} markerEnd="url(#mapping-arrow)" />}
-          </g>
-        </svg>
-        {drawnLinks.map(({ key, link, mid }) => <div key={key} className="mapping-link-controls" style={{ transform: `translate(${mid.x}px, ${mid.y}px) translate(-50%, -50%) scale(${1 / Math.max(layout.viewport.zoom, 0.6)})` }}>
-          <span title={`${agentName(link.fromId)} comanda ${agentName(link.toId)}`}>{agentName(link.fromId)} → {agentName(link.toId)}</span>
-          <button aria-label={`Avisar ${agentName(link.fromId)} sobre os agentes que comanda`} title="Enviar briefing ao líder" onClick={() => introduce(link.fromId)}><Megaphone size={12} /></button>
-          <button aria-label={`Remover link ${agentName(link.fromId)} → ${agentName(link.toId)}`} title="Remover link" onClick={() => removeLink(link)}><Unlink size={12} /></button>
-        </div>)}
-        {loaded && filteredSessions.map((session) => {
-          const node = nodesById.get(session.id);
-          if (!node || node.hidden) return null;
-          return <AgentWindow key={session.id} session={session} project={projectFor(session) ?? null} node={node} mode={layout.mode} selected={selectedId === session.id} linkTarget={linkDrag?.targetId === session.id} zoom={layout.viewport.zoom} onSelect={setSelectedId} onFocus={focusNode} onChange={patchNode} onLinkStart={startLink} />;
-        })}
-      </div>
-      {!loaded && <div className="mapping-empty">Carregando organização…</div>}
-      {loaded && filteredSessions.length === 0 && <div className="mapping-empty"><Workflow size={28} /><strong>Nenhuma sessão neste escopo.</strong></div>}
-      <MappingMinimap nodes={visibleModeNodes} mode={layout.mode} viewport={layout.viewport} canvas={canvasSize} onCenter={(x, y) => updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: canvasSize.width / 2 - x * current.viewport.zoom, y: canvasSize.height / 2 - y * current.viewport.zoom } }), true)} />
+      {showInspector && (selectedLink
+        ? <ConnectionInspector link={selectedLink} label={name} onClose={closeInspector} onBrief={() => void brief(selectedLink)} onRemove={() => void remove(selectedLink)} onFocus={focusNode} />
+        : selectedSession && <AgentInspector key={selectedSession.id} session={selectedSession} project={projectFor(selectedSession)} links={selectedAgentLinks}
+          onClose={closeInspector} onFocus={focusNode} onTerminal={openTerminal} onConnection={inspectLink} onHistory={openTimelineHistory} />)}
     </div>
+    <div hidden={full || Boolean(maximized)}><AgentTimeline open={preferences.timeline} onToggle={toggleTimeline} sessions={filteredSessions} focusedAgent={historyAgent} onSelect={onTimelineSelect} /></div>
+    {menu && <ContextMenu autoFocus x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
   </section>;
-}
+});

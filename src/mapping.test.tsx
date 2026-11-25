@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrangeMappingNodes, mappingBounds, mergeMappingLayout, nodesForMappingMode, patchMappingNode, type MappingLayout } from './mapping';
+import { DEFAULT_MAPPING_PREFERENCES, MAPPING_ORDERS, mappingBounds, mappingScene, mergeMappingLayout, nodesForMappingMode, patchMappingNode, type MappingLayout } from './mapping';
 
 describe('mapping layout', () => {
   it('preserves saved geometry and adds only missing sessions', () => {
@@ -17,14 +17,29 @@ describe('mapping layout', () => {
   it('arranges visible agents without overlap and leaves hidden agents untouched', () => {
     const base = mergeMappingLayout(null, ['a', 'b', 'c']);
     base.nodes[2] = { ...base.nodes[2], hidden: true, x: -500, y: -400 };
-    const arranged = arrangeMappingNodes(base.nodes, (id) => id === 'b' ? 'p2' : 'p1', 'architecture');
-    const architecture = nodesForMappingMode(arranged, 'architecture');
-    const bounds = mappingBounds(architecture, 'architecture');
-    expect(arranged[2].x).toBe(-500);
-    expect(architecture[0].y).not.toBe(architecture[1].y);
-    expect(nodesForMappingMode(arranged, 'terminal').map(({ x, y }) => ({ x, y }))).toEqual(base.nodes.map(({ x, y }) => ({ x, y })));
+    const scene = mappingScene(base.nodes, 'architecture', { ...DEFAULT_MAPPING_PREFERENCES, order: 'project' }, (id) => ({ key: id === 'b' ? 'p2' : 'p1', label: 'Mesmo nome' }), []);
+    const bounds = mappingBounds(scene.nodes, 'architecture');
+    expect(base.nodes[2].x).toBe(-500);
+    expect(scene.nodes[0].y).not.toBe(scene.nodes[1].y);
+    expect(scene.groups).toHaveLength(2);
+    expect(scene.nodes.map((node) => node.sessionId)).toEqual(['a', 'b']);
     expect(bounds?.width).toBeGreaterThan(0);
     expect(bounds?.height).toBeGreaterThan(0);
+  });
+
+  it('keeps organization derived and follows explicit links in hierarchical mode', () => {
+    const base = mergeMappingLayout(null, ['a', 'b', 'c', 'd']);
+    const original = JSON.stringify(base);
+    const links = [{ fromId: 'c', toId: 'a' }, { fromId: 'a', toId: 'b' }];
+    for (const order of Object.keys(MAPPING_ORDERS) as (keyof typeof MAPPING_ORDERS)[]) {
+      const { nodes } = mappingScene(base.nodes, 'architecture', { ...DEFAULT_MAPPING_PREFERENCES, order }, () => ({ key: 'same', label: 'Mesmo nome' }), links);
+      expect(new Set(nodes.map(({ x, y }) => `${x},${y}`)).size).toBe(4);
+      if (order === 'hierarchy') {
+        expect(nodes[2].x).toBeLessThan(nodes[0].x);
+        expect(nodes[0].x).toBeLessThan(nodes[1].x);
+      }
+    }
+    expect(JSON.stringify(base)).toBe(original);
   });
 
   it('restores each mode position after saving moves in both views', () => {

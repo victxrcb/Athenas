@@ -8,7 +8,8 @@ export type ProjectInfo = { id: string; groupId: string | null; name: string; fo
 export type PaneInfo = { id: string; projectId: string; position: number; pinned: boolean };
 export type WorkspaceSnapshot = { groups: GroupInfo[]; projects: ProjectInfo[]; panes: PaneInfo[] };
 export type AgentUsage = { agent: string; sessions: number; bytes: number; cpuPercent: number };
-export type MemorySnapshot = { totalBytes: number; appBytes: number; groups: { groupId: string; bytes: number; suspended: boolean }[]; agents: AgentUsage[] };
+export type SessionMetrics = { pid: number; bytes: number; cpuPercent: number | null; runtimeSeconds: number; suspended: boolean };
+export type MemorySnapshot = { totalBytes: number; appBytes: number; groups: { groupId: string; bytes: number; suspended: boolean }[]; agents: AgentUsage[]; sessions?: Record<string, SessionMetrics> };
 export type Preferences = { claudeCommand: string; codexCommand: string; shellCommand: string; workerLimit: number; scrollbackMb: number; fontSize: number; reducedEffects: boolean };
 export type Section = 'home' | 'git' | 'mcp' | 'skills' | 'orchestrator' | 'mapping' | 'inbox' | 'history' | 'reminders';
 /** Live orchestrator counters shown in navigation; polled once by the app shell. */
