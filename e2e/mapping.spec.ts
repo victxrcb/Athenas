@@ -1,5 +1,33 @@
 import { expect, test } from '@playwright/test';
 
+test('mapping controls follow the active theme', async ({ page }) => {
+  await page.goto('/');
+  const navigation = page.getByRole('button', { name: 'Mapeamento', exact: true });
+  await navigation.click();
+  const architecture = page.getByRole('button', { name: 'Arquitetura', exact: true });
+  const create = page.getByRole('button', { name: 'Novo agente no mapa' });
+  const headingIcon = page.locator('.mapping-heading > span');
+
+  for (const control of [navigation, architecture, create, headingIcon]) {
+    await expect(control).toHaveCSS('color', 'rgb(237, 237, 237)');
+  }
+
+  await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
+  await page.getByRole('button', { name: 'Ametista', exact: true }).click();
+  await page.getByRole('button', { name: 'Fechar configurações' }).click();
+  const focusColor = await page.evaluate(() => {
+    const probe = document.body.appendChild(document.createElement('span'));
+    probe.style.color = 'var(--focus)';
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  });
+  expect(focusColor).not.toBe('rgb(237, 237, 237)');
+  for (const control of [navigation, architecture, create, headingIcon]) {
+    await expect(control).toHaveCSS('color', focusColor);
+  }
+});
+
 test('mapping workspace adapts, connects the inspector and restores canvas preferences', async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
