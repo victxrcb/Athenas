@@ -51,6 +51,32 @@ describe('MappingView', () => {
     expect(screen.getByText('1 agente(s) no mapa')).toBeTruthy();
   });
 
+  it('keeps a dragged architecture icon separate from its terminal window after reloading', async () => {
+    const { container, unmount } = render(<MappingView />);
+    await screen.findByText('Claude Code');
+    const node = () => container.querySelector<HTMLElement>('[data-session-id="session-a"]')!;
+    const terminalPosition = node().style.transform;
+    fireEvent.click(screen.getByRole('button', { name: 'Arquitetura' }));
+    const handle = node().querySelector('header')!;
+    handle.setPointerCapture = vi.fn();
+    handle.releasePointerCapture = vi.fn();
+    const drag = (type: string, x: number, y: number) => {
+      fireEvent(handle, new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+    };
+    drag('pointerdown', 100, 100);
+    drag('pointermove', 160, 130);
+    drag('pointerup', 160, 130);
+    const architecturePosition = node().style.transform;
+    expect(architecturePosition).toBe('translate(124px, 94px)');
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
+    expect(node().style.transform).toBe(terminalPosition);
+    unmount();
+    render(<MappingView />);
+    await screen.findByText('Claude Code');
+    fireEvent.click(screen.getByRole('button', { name: 'Arquitetura' }));
+    expect(screen.getByRole('article', { name: 'Claude Code · Encerrado' }).style.transform).toBe(architecturePosition);
+  });
+
   it('links two agents by dragging the cable onto another agent and removes the link', async () => {
     const { container } = render(<MappingView />);
     await waitFor(() => expect(screen.getByText('Claude Code')).toBeTruthy());

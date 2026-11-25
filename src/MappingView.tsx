@@ -13,7 +13,7 @@ import { sameFolder } from './path';
 import { useAppStore, type ProjectInfo, type SessionInfo } from './store';
 import {
   arrangeMappingNodes, mappingBounds,
-  mergeMappingLayout, nodeDisplaySize, type MappingLayout, type MappingMode,
+  mergeMappingLayout, nodeDisplaySize, nodesForMappingMode, patchMappingNode, type MappingLayout, type MappingMode,
   type MappingNode, type MappingViewport,
 } from './mapping';
 import {
@@ -214,7 +214,8 @@ export function MappingView() {
   const projectFor = useCallback((session: SessionInfo) => projects.find((project) => sameFolder(session.folder, project.folder)), [projects]);
   const filteredSessions = useMemo(() => sessions.filter((session) => scope === 'all' || projectFor(session)?.id === scope), [sessions, scope, projectFor]);
   const sessionIds = filteredSessions.map((session) => session.id).join('|');
-  const nodesById = useMemo(() => new Map(layout.nodes.map((node) => [node.sessionId, node])), [layout.nodes]);
+  const visibleModeNodes = useMemo(() => nodesForMappingMode(layout.nodes, layout.mode), [layout.nodes, layout.mode]);
+  const nodesById = useMemo(() => new Map(visibleModeNodes.map((node) => [node.sessionId, node])), [visibleModeNodes]);
 
   const persist = useCallback((next: MappingLayout) => {
     void storeLayout(scope, next).catch((error) => setNotice(`Não foi possível salvar o mapa: ${error}`));
@@ -338,17 +339,18 @@ export function MappingView() {
   }, [setNotice]);
 
   const patchNode = useCallback((id: string, patch: Partial<MappingNode>, save = false) => {
-    updateLayout((current) => ({ ...current, nodes: current.nodes.map((node) => node.sessionId === id ? { ...node, ...patch } : node) }), save);
+    updateLayout((current) => ({ ...current, nodes: current.nodes.map((node) => node.sessionId === id ? patchMappingNode(node, patch, current.mode) : node) }), save);
   }, [updateLayout]);
 
   const focusNode = useCallback((id: string) => {
-    const node = layoutRef.current.nodes.find((item) => item.sessionId === id);
+    const { nodes, mode, viewport: currentViewport } = layoutRef.current;
+    const node = nodesForMappingMode(nodes, mode).find((item) => item.sessionId === id);
     const host = canvasRef.current;
     if (!node || !host) return;
-    const size = nodeDisplaySize(node, layoutRef.current.mode);
-    const viewport = { ...layoutRef.current.viewport,
-      x: host.clientWidth / 2 - (node.x + size.width / 2) * layoutRef.current.viewport.zoom,
-      y: host.clientHeight / 2 - (node.y + size.height / 2) * layoutRef.current.viewport.zoom,
+    const size = nodeDisplaySize(node, mode);
+    const viewport = { ...currentViewport,
+      x: host.clientWidth / 2 - (node.x + size.width / 2) * currentViewport.zoom,
+      y: host.clientHeight / 2 - (node.y + size.height / 2) * currentViewport.zoom,
     };
     setSelectedId(id);
     updateLayout((current) => ({ ...current, viewport }), true);
@@ -367,7 +369,8 @@ export function MappingView() {
 
   const fitAll = useCallback((save = true) => {
     const host = canvasRef.current;
-    const bounds = mappingBounds(layoutRef.current.nodes, layoutRef.current.mode);
+    const { nodes, mode } = layoutRef.current;
+    const bounds = mappingBounds(nodesForMappingMode(nodes, mode), mode);
     if (!host || !bounds) return;
     const zoom = clamp(Math.min((host.clientWidth - 96) / Math.max(bounds.width, 1), (host.clientHeight - 96) / Math.max(bounds.height, 1)), MIN_ZOOM, 1.25);
     const viewport = {
@@ -489,7 +492,7 @@ export function MappingView() {
       </div>
       {!loaded && <div className="mapping-empty">Carregando organização…</div>}
       {loaded && filteredSessions.length === 0 && <div className="mapping-empty"><Workflow size={28} /><strong>Nenhuma sessão neste escopo.</strong></div>}
-      <MappingMinimap nodes={layout.nodes} mode={layout.mode} viewport={layout.viewport} canvas={canvasSize} onCenter={(x, y) => updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: canvasSize.width / 2 - x * current.viewport.zoom, y: canvasSize.height / 2 - y * current.viewport.zoom } }), true)} />
+      <MappingMinimap nodes={visibleModeNodes} mode={layout.mode} viewport={layout.viewport} canvas={canvasSize} onCenter={(x, y) => updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: canvasSize.width / 2 - x * current.viewport.zoom, y: canvasSize.height / 2 - y * current.viewport.zoom } }), true)} />
     </div>
   </section>;
 }

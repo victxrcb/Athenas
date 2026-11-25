@@ -1,11 +1,13 @@
 export type MappingMode = 'terminal' | 'architecture';
 
 export type MappingViewport = { x: number; y: number; zoom: number };
+type MappingPosition = Pick<MappingViewport, 'x' | 'y'>;
 
 export type MappingNode = {
   sessionId: string;
   x: number;
   y: number;
+  architecturePosition?: MappingPosition | null;
   width: number;
   height: number;
   minimized: boolean;
@@ -36,7 +38,10 @@ export function newMappingNode(sessionId: string, index: number): MappingNode {
 /** Keeps user geometry for known sessions and assigns a stable free slot only to new sessions. */
 export function mergeMappingLayout(layout: MappingLayout | null, sessionIds: string[]): MappingLayout {
   const existing = new Map((layout?.nodes ?? []).map((node) => [node.sessionId, node]));
-  const nodes = sessionIds.map((id, index) => existing.get(id) ?? newMappingNode(id, index));
+  const nodes = sessionIds.map((id, index) => {
+    const node = existing.get(id) ?? newMappingNode(id, index);
+    return node.architecturePosition ? node : { ...node, architecturePosition: { x: node.x, y: node.y } };
+  });
   return {
     mode: layout?.mode === 'architecture' ? 'architecture' : 'terminal',
     viewport: layout?.viewport ?? { ...DEFAULT_VIEWPORT },
@@ -47,6 +52,17 @@ export function mergeMappingLayout(layout: MappingLayout | null, sessionIds: str
 export function nodeDisplaySize(node: MappingNode, mode: MappingMode) {
   if (mode === 'architecture') return ARCHITECTURE_NODE_SIZE;
   return { width: node.width, height: node.minimized ? 42 : node.height };
+}
+
+export function nodesForMappingMode(nodes: MappingNode[], mode: MappingMode) {
+  return mode === 'architecture' ? nodes.map((node) => ({ ...node, ...node.architecturePosition })) : nodes;
+}
+
+export function patchMappingNode(node: MappingNode, patch: Partial<MappingNode>, mode: MappingMode): MappingNode {
+  if (mode === 'terminal') return { ...node, ...patch };
+  const { x, y, ...rest } = patch;
+  const position = node.architecturePosition ?? node;
+  return { ...node, ...rest, architecturePosition: { x: x ?? position.x, y: y ?? position.y } };
 }
 
 /** Explicit auto-layout grouped by project; hidden nodes keep their saved position. */
@@ -72,9 +88,11 @@ export function arrangeMappingNodes(
       const size = nodeDisplaySize(node, mode);
       const column = index % columns;
       const row = Math.floor(index / columns);
-      const next = { ...node, x: 40 + column * (cellWidth + 28), y: groupY + row * (cellHeight + 28) };
+      const x = 40 + column * (cellWidth + 28);
+      const y = groupY + row * (cellHeight + 28);
+      const next = patchMappingNode(node, { x, y }, mode);
       arranged.set(node.sessionId, next);
-      maxBottom = Math.max(maxBottom, next.y + size.height);
+      maxBottom = Math.max(maxBottom, y + size.height);
     });
     groupY = maxBottom + 72;
   }
