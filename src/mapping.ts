@@ -20,7 +20,7 @@ export type MappingLayout = {
 
 export const DEFAULT_VIEWPORT: MappingViewport = { x: 160, y: 96, zoom: 1 };
 export const DEFAULT_NODE_SIZE = { width: 620, height: 420 };
-export const ARCHITECTURE_NODE_SIZE = { width: 280, height: 142 };
+export const ARCHITECTURE_NODE_SIZE = { width: 64, height: 64 };
 
 export function newMappingNode(sessionId: string, index: number): MappingNode {
   return {

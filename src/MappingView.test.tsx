@@ -35,7 +35,10 @@ describe('MappingView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Exibir 1 oculto/ }));
 
     fireEvent.click(screen.getByRole('button', { name: /Arquitetura/ }));
-    expect(screen.getAllByText('Sem tarefa estruturada disponível')).toHaveLength(2);
+    expect(screen.getByRole('article', { name: 'Claude Code · Encerrado' })).toBeTruthy();
+    expect(screen.getByRole('article', { name: 'Codex · Erro' })).toBeTruthy();
+    expect(screen.queryByText('Sem tarefa estruturada disponível')).toBeNull();
+    expect(screen.queryByLabelText('Controles do canvas')).toBeNull();
     expect(useAppStore.getState().sessions).toHaveLength(2);
   });
 
@@ -63,6 +66,7 @@ describe('MappingView', () => {
     }
     await waitFor(() => expect(JSON.parse(localStorage.getItem('athenas-agent-links') ?? '[]')).toMatchObject([{ fromId: 'session-a', toId: 'session-b' }]));
     await waitFor(() => expect(screen.getByText('Claude Code → Codex')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Arquitetura/ }));
     expect(container.querySelectorAll('path.mapping-edge')).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Remover link Claude Code → Codex' }));

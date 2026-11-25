@@ -51,12 +51,21 @@ describe('home', () => {
   });
 
   it('opens the visual agent mapping from the sidebar', async () => {
+    useAppStore.setState({ workspace: { groups: [], panes: [], projects: [
+      { id: 'project-1', groupId: null, name: 'Projeto', folder: 'C:\\project', layout: 'auto', splitRatio: .5, updatedAt: 1 },
+    ] } });
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Mapeamento' }));
     expect(await screen.findByRole('heading', { name: 'Mapeamento' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Terminal/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Arquitetura/ })).toBeTruthy();
     expect(screen.getByLabelText('Minimapa')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Filtrar projeto'), { target: { value: 'project-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Novo agente no mapa' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Nova sessão' }));
+    expect((dialog.getByLabelText('Pasta') as HTMLInputElement).value).toBe('C:\\project');
+    fireEvent.click(dialog.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.getByRole('heading', { name: 'Mapeamento' })).toBeTruthy();
   });
 
   it('opens personal reminders from the sidebar', async () => {

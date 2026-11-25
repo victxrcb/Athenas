@@ -80,16 +80,19 @@ function EndedSession({ session, onResume }: { session: SessionInfo; onResume: (
 }
 
 function SessionModal() {
-  const { sessionOpen, closeSession, setNotice, openSession, activeProjectId, workspace, targetPaneId, setWorkspace } = useAppStore();
+  const { sessionOpen, closeSession, setNotice, openSession, activeProjectId, workspace, targetPaneId, setWorkspace, mappingSession } = useAppStore();
   const [agent, setAgent] = useState<Agent>('Claude Code');
   const [mode, setMode] = useState<Mode>('Normal');
   const [folder, setFolder] = useState('');
   const [advanced, setAdvanced] = useState(false);
   const [createMore, setCreateMore] = useState(false);
   const [command, setCommand] = useState('');
+  const projectId = mappingSession ? mappingSession.projectId : activeProjectId;
+  const project = workspace.projects.find((item) => item.id === projectId);
+  const projectFolder = project?.folder;
   useEffect(() => {
-    if (sessionOpen) setFolder(displayPath(workspace.projects.find((project) => project.id === activeProjectId)?.folder ?? ''));
-  }, [sessionOpen, activeProjectId, workspace.projects]);
+    if (sessionOpen) setFolder(displayPath(projectFolder ?? ''));
+  }, [sessionOpen, projectId, projectFolder]);
   if (!sessionOpen) return null;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -97,7 +100,6 @@ function SessionModal() {
     if (!isTauri()) { setNotice('Abra o aplicativo desktop para iniciar um terminal real.'); return; }
     try {
       let paneId = targetPaneId;
-      const project = workspace.projects.find((item) => item.id === activeProjectId);
       if (!paneId && project && sameFolder(project?.folder, folder)) {
         const snapshot = await invoke<WorkspaceSnapshot>('pane_create', { projectId: project.id });
         paneId = snapshot.panes.filter((pane) => pane.projectId === project.id).at(-1)?.id ?? null;
@@ -105,10 +107,11 @@ function SessionModal() {
       }
       const session = await invoke<SessionInfo>('terminal_start', { agent, folder, command, resumeId: null, paneId, resume: false, mode, initialPrompt: null, cols: 100, rows: 30 });
       useAppStore.getState().upsertSession(session);
-      if (!activeProjectId) useAppStore.getState().setActiveSessionId(session.id);
+      if (mappingSession) mappingSession.onCreated(session);
+      else if (!activeProjectId) useAppStore.getState().setActiveSessionId(session.id);
     } catch (error) { setNotice(String(error)); return; }
     if (!createMore) closeSession();
-    else openSession();
+    else if (!mappingSession) openSession();
   };
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeSession(); }}>
     <form className="modal" role="dialog" aria-modal="true" aria-label="Nova sessão" onSubmit={submit}>

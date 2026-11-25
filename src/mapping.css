@@ -32,6 +32,9 @@
 .mapping-action { height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--text-dim); font-size: var(--fs-xs); white-space: nowrap; transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease); }
 .mapping-action:hover { border-color: var(--border); background: var(--surface-2); color: var(--text); }
 .mapping-action:active { transform: translateY(1px); }
+.mapping-action.mapping-create { border-color: color-mix(in srgb, var(--focus) 45%, var(--border)); background: color-mix(in srgb, var(--focus) 14%, var(--surface-2)); color: var(--text); }
+.mapping-action.mapping-create:hover { border-color: var(--focus); }
+.mapping-create svg { color: var(--focus); }
 .mapping-action.attention { border-color: color-mix(in srgb, var(--warning) 35%, var(--border)); background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); }
 
 .mapping-canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; cursor: grab; background-color: color-mix(in srgb, var(--surface-0) 94%, #001a16); background-image: radial-gradient(circle, color-mix(in srgb, var(--text-muted) 28%, transparent) 1px, transparent 1.2px); }
@@ -73,21 +76,13 @@
 .mapping-resize { position: absolute; right: 0; bottom: 0; z-index: 5; width: 18px; height: 18px; cursor: nwse-resize; touch-action: none; }
 .mapping-resize::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 7px; height: 7px; border-right: 1px solid var(--text-muted); border-bottom: 1px solid var(--text-muted); opacity: .7; }
 
-.architecture-node { padding: 10px; background: color-mix(in srgb, var(--surface-1) 94%, var(--accent-soft)); }
-.architecture-drag { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 8px; cursor: grab; user-select: none; touch-action: none; }
-.architecture-drag > div { min-width: 0; display: grid; line-height: 1.2; }
-.architecture-drag strong, .architecture-drag small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.architecture-drag strong { font-size: var(--fs-sm); font-weight: 600; }
-.architecture-drag small { color: var(--text-muted); font-size: var(--fs-2xs); }
-.architecture-body { display: grid; gap: 8px; margin-top: 13px; padding-top: 10px; border-top: 1px solid var(--border); }
-.architecture-body .status-badge { width: max-content; }
-.architecture-body p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: var(--fs-xs); }
-.architecture-focus { position: absolute; right: 8px; bottom: 8px; }
+.architecture-node { overflow: visible; contain: layout; background: var(--surface-1); }
+.architecture-drag { height: 100%; display: grid; place-items: center; cursor: grab; user-select: none; touch-action: none; }
+.architecture-drag .status-dot { position: absolute; right: 6px; top: 6px; width: 9px; height: 9px; }
+.architecture-actions { position: absolute; top: 100%; left: 50%; display: flex; transform: translateX(-50%); padding: 2px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface-1); opacity: 0; pointer-events: none; }
+.architecture-node:is(:hover, :focus-within) .architecture-actions { opacity: 1; pointer-events: auto; }
+.architecture-node:hover { z-index: 5; }
 
-.mapping-controls { position: absolute; left: 14px; bottom: 14px; z-index: 8; display: flex; align-items: center; padding: 3px; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface-1) 94%, transparent); box-shadow: var(--shadow-md); backdrop-filter: blur(8px); }
-.mapping-controls button { min-width: 29px; height: 28px; display: grid; place-items: center; padding: 0 7px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-dim); }
-.mapping-controls button:hover { background: var(--surface-3); color: var(--text); }
-.mapping-controls .zoom-value { min-width: 48px; border-left: 1px solid var(--border); border-right: 1px solid var(--border); border-radius: 0; font: 10px var(--font-mono); }
 .mapping-minimap { position: absolute; right: 14px; bottom: 14px; z-index: 8; width: 180px; height: 110px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface-1) 94%, transparent); box-shadow: var(--shadow-md); cursor: crosshair; backdrop-filter: blur(8px); }
 .mapping-minimap i { position: absolute; min-width: 3px; min-height: 3px; border: 1px solid color-mix(in srgb, var(--focus) 52%, var(--border-strong)); border-radius: 1px; background: color-mix(in srgb, var(--focus) 18%, var(--surface-3)); }
 .mapping-minimap b { position: absolute; border: 1px solid var(--text-dim); background: color-mix(in srgb, var(--text) 5%, transparent); pointer-events: none; }
@@ -102,19 +97,20 @@
 .mapping-node.selected .mapping-agent-icon { border-color: color-mix(in srgb, var(--focus) 45%, var(--border)); }
 .architecture-node { border-radius: var(--r-lg, var(--r-md)); }
 .architecture-node.selected { box-shadow: 0 0 0 1px color-mix(in srgb, var(--focus) 28%, transparent), 0 10px 30px -8px color-mix(in srgb, var(--focus) 30%, transparent), var(--shadow-lg); }
-.mapping-controls button:focus-visible, .mapping-window-actions button:focus-visible, .mapping-action:focus-visible, .mapping-mode button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.architecture-actions button:focus-visible, .mapping-window-actions button:focus-visible, .mapping-action:focus-visible, .mapping-mode button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .mapping-empty > svg { padding: 12px; width: 52px; height: 52px; border: 1px dashed var(--border-strong); border-radius: var(--r-md); color: var(--focus); background: color-mix(in srgb, var(--focus) 6%, transparent); }
 
 @media (max-width: 1280px) {
   .mapping-heading small { display: none; }
   .mapping-chip.muted { display: none; }
-  .mapping-action > span { display: none; }
+  .mapping-action:not(.mapping-create) > span { display: none; }
   .mapping-action { padding-inline: 8px; }
 }
 @media (max-width: 980px) {
   .mapping-divider, .mapping-heading > div { display: none; }
   .mapping-project-filter { min-width: 130px; }
   .mapping-mode button { padding-inline: 8px; }
+  .mapping-create > span { display: none; }
 }
 
 /* Agent links: a directed edge means the source agent commands the target. */
@@ -127,6 +123,7 @@
 .mapping-link-controls span { margin-right: 4px; color: var(--text-dim); font-size: var(--fs-2xs); }
 .mapping-link-controls button { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-full); background: transparent; color: var(--text-muted); }
 .mapping-link-controls button:hover { background: var(--surface-3); color: var(--text); }
+.mapping-architecture .mapping-link-controls:not(:hover, :focus-within) { opacity: 0; }
 .mapping-link-port { width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--focus); cursor: crosshair; touch-action: none; }
 .mapping-link-port:hover { background: color-mix(in srgb, var(--focus) 16%, var(--surface-3)); }
 .mapping-canvas.linking, .mapping-canvas.linking * { cursor: crosshair !important; }

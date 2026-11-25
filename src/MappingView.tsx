@@ -3,16 +3,16 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
   Cable, ChevronDown, Crosshair, Eye, Focus, FolderTree, LayoutGrid, Maximize2, Megaphone, Minus, Network,
-  RotateCcw, Scan, TerminalSquare, Unlink, Workflow, X, ZoomIn, ZoomOut,
+  Plus, Scan, TerminalSquare, Unlink, Workflow, X,
 } from 'lucide-react';
 import { AgentIcon } from './AgentIcon';
-import { StatusBadge, StatusDot } from './status';
+import { sessionStatus, StatusBadge, StatusDot } from './status';
 import { sessionLabel } from './activity';
 import { useLiveStatus } from './SessionName';
 import { sameFolder } from './path';
 import { useAppStore, type ProjectInfo, type SessionInfo } from './store';
 import {
-  ARCHITECTURE_NODE_SIZE, DEFAULT_VIEWPORT, arrangeMappingNodes, mappingBounds,
+  arrangeMappingNodes, mappingBounds,
   mergeMappingLayout, nodeDisplaySize, type MappingLayout, type MappingMode,
   type MappingNode, type MappingViewport,
 } from './mapping';
@@ -108,20 +108,24 @@ const AgentWindow = memo(function AgentWindow({
   ><Cable size={13} /></button>;
 
   if (mode === 'architecture') {
+    const sessionState = sessionStatus(session.status);
+    const description = `${sessionLabel(session)} · ${sessionState.label}`;
     return <article
       data-session-id={session.id}
+      aria-label={description}
+      title={description}
       className={`mapping-node architecture-node ${selected ? 'selected' : ''} ${linkTarget ? 'link-target' : ''}`}
-      style={{ transform: `translate(${node.x}px, ${node.y}px)`, width: ARCHITECTURE_NODE_SIZE.width, height: ARCHITECTURE_NODE_SIZE.height }}
+      style={{ transform: `translate(${node.x}px, ${node.y}px)`, width: size.width, height: size.height }}
       onPointerDown={() => onSelect(session.id)}
     >
       <header className="architecture-drag" onPointerDown={(event) => begin('move', event)} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
-        <span className="mapping-agent-icon"><AgentIcon agent={session.agent} size={17} /></span>
-        <div><strong>{sessionLabel(session)}</strong><small>{project?.name ?? 'Sessão avulsa'}</small></div>
-        <StatusDot info={status} />
-        <span onPointerDown={(event) => event.stopPropagation()}>{linkButton}</span>
+        <AgentIcon agent={session.agent} size={30} />
+        <StatusDot info={sessionState} />
       </header>
-      <div className="architecture-body"><StatusBadge info={status} /><p>Sem tarefa estruturada disponível</p></div>
-      <button className="architecture-focus" aria-label={`Focar ${session.agent}`} title="Focar agente" onClick={() => onFocus(session.id)}><Focus size={13} /></button>
+      <div className="architecture-actions">
+        <button className="architecture-focus" aria-label={`Focar ${sessionLabel(session)}`} title="Focar agente" onClick={() => onFocus(session.id)}><Focus size={13} /></button>
+        {linkButton}
+      </div>
     </article>;
   }
 
@@ -190,9 +194,11 @@ export function MappingView() {
   const projects = useAppStore((state) => state.workspace.projects);
   const activeProjectId = useAppStore((state) => state.activeProjectId);
   const setNotice = useAppStore((state) => state.setNotice);
+  const openMappingSession = useAppStore((state) => state.openMappingSession);
   const [scope, setScope] = useState(activeProjectId ?? 'all');
   const [layout, setLayout] = useState<MappingLayout>(() => mergeMappingLayout(null, []));
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newSessionId, setNewSessionId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 1, height: 1 });
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -348,6 +354,17 @@ export function MappingView() {
     updateLayout((current) => ({ ...current, viewport }), true);
   }, [updateLayout]);
 
+  useEffect(() => {
+    if (!loaded || !newSessionId || !nodesById.has(newSessionId)) return;
+    focusNode(newSessionId);
+    setNewSessionId(null);
+  }, [loaded, newSessionId, nodesById, focusNode]);
+
+  const createAgent = () => openMappingSession(scope === 'all' ? null : scope, (session) => {
+    if (scope !== 'all' && projectFor(session)?.id !== scope) setScope('all');
+    setNewSessionId(session.id);
+  });
+
   const fitAll = useCallback((save = true) => {
     const host = canvasRef.current;
     const bounds = mappingBounds(layoutRef.current.nodes, layoutRef.current.mode);
@@ -375,6 +392,23 @@ export function MappingView() {
     });
     scheduleSave();
   }, [scheduleSave, updateLayout]);
+
+  useEffect(() => {
+    const host = canvasRef.current;
+    if (!host) return;
+    const handleWheel = (event: WheelEvent) => {
+      if ((event.target as Element).closest('.terminal-view')) return;
+      event.preventDefault();
+      if (event.ctrlKey || event.metaKey) {
+        setZoom(layoutRef.current.viewport.zoom * Math.exp(-event.deltaY * 0.002), event.clientX, event.clientY);
+      } else {
+        updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: current.viewport.x - event.deltaX, y: current.viewport.y - event.deltaY } }));
+        scheduleSave();
+      }
+    };
+    host.addEventListener('wheel', handleWheel, { passive: false });
+    return () => host.removeEventListener('wheel', handleWheel);
+  }, [scheduleSave, setZoom, updateLayout]);
 
   const restoreHidden = () => updateLayout((current) => ({ ...current, nodes: current.nodes.map((node) => ({ ...node, hidden: false })) }), true);
   const hiddenCount = layout.nodes.filter((node) => node.hidden).length;
@@ -408,6 +442,7 @@ export function MappingView() {
         <button className={layout.mode === 'architecture' ? 'active' : ''} aria-pressed={layout.mode === 'architecture'} onClick={() => updateLayout((current) => ({ ...current, mode: 'architecture' }), true)}><Network size={14} /> Arquitetura</button>
       </div>
       <div className="mapping-actions">
+        <button className="mapping-action mapping-create" aria-label="Novo agente no mapa" title="Novo agente" onClick={createAgent}><Plus size={15} /> <span>Novo agente</span></button>
         {hiddenCount > 0 && <button className="mapping-action attention" onClick={restoreHidden}><Eye size={13} /> Exibir {hiddenCount} oculto(s)</button>}
         <button className="mapping-action" title="Organizar agentes por projeto" onClick={() => { const next = arrangeMappingNodes(layoutRef.current.nodes, (id) => { const session = filteredSessions.find((item) => item.id === id); return session ? projectFor(session)?.id ?? 'loose' : 'loose'; }, layoutRef.current.mode); updateLayout((current) => ({ ...current, nodes: next }), true); window.requestAnimationFrame(() => fitAll()); }}><LayoutGrid size={14} /> <span>Organizar agentes</span></button>
         <button className="mapping-action" title="Ajustar todos à tela" onClick={() => fitAll()}><Scan size={14} /> <span>Ajustar</span></button>
@@ -415,16 +450,10 @@ export function MappingView() {
     </header>
     <div
       ref={canvasRef}
-      className={`mapping-canvas ${panRef.current ? 'panning' : ''} ${linkDrag ? 'linking' : ''}`}
+      className={`mapping-canvas ${layout.mode === 'architecture' ? 'mapping-architecture' : ''} ${panRef.current ? 'panning' : ''} ${linkDrag ? 'linking' : ''}`}
       style={{ backgroundSize: `${grid}px ${grid}px`, backgroundPosition: `${layout.viewport.x % grid}px ${layout.viewport.y % grid}px` }}
-      onWheel={(event) => {
-        if ((event.target as HTMLElement).closest('.terminal-view')) return;
-        event.preventDefault();
-        if (event.ctrlKey || event.metaKey) setZoom(layout.viewport.zoom * Math.exp(-event.deltaY * 0.002), event.clientX, event.clientY);
-        else { updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: current.viewport.x - event.deltaX, y: current.viewport.y - event.deltaY } })); scheduleSave(); }
-      }}
       onPointerDown={(event) => {
-        if (event.button !== 0 || (event.target as HTMLElement).closest('.mapping-node, .mapping-controls, .mapping-minimap, .mapping-link-controls')) return;
+        if (event.button !== 0 || (event.target as HTMLElement).closest('.mapping-node, .mapping-minimap, .mapping-link-controls')) return;
         panRef.current = { x: event.clientX, y: event.clientY, viewport: layout.viewport };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
@@ -437,7 +466,7 @@ export function MappingView() {
       onPointerCancel={() => { panRef.current = null; }}
     >
       <div className="mapping-world" style={{ transform: `translate(${layout.viewport.x}px, ${layout.viewport.y}px) scale(${layout.viewport.zoom})` }}>
-        <div className="mapping-axis axis-x"><span>X</span></div><div className="mapping-axis axis-y"><span>Y</span></div><div className="mapping-origin">0,0</div>
+        {layout.mode === 'terminal' && <><div className="mapping-axis axis-x"><span>X</span></div><div className="mapping-axis axis-y"><span>Y</span></div><div className="mapping-origin">0,0</div></>}
         <svg className="mapping-edges" aria-hidden="true">
           <defs>
             <marker id="mapping-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
@@ -459,14 +488,7 @@ export function MappingView() {
         })}
       </div>
       {!loaded && <div className="mapping-empty">Carregando organização…</div>}
-      {loaded && filteredSessions.length === 0 && <div className="mapping-empty"><Workflow size={28} /><strong>Nenhuma sessão neste escopo.</strong><span>Abra um agente real para adicioná-lo ao mapa.</span></div>}
-      <div className="mapping-controls" aria-label="Controles do canvas">
-        <button aria-label="Aproximar" title="Aproximar" onClick={() => setZoom(layout.viewport.zoom + 0.1)}><ZoomIn size={15} /></button>
-        <button aria-label="Afastar" title="Afastar" onClick={() => setZoom(layout.viewport.zoom - 0.1)}><ZoomOut size={15} /></button>
-        <button className="zoom-value" aria-label="Restaurar zoom para 100%" title="Zoom 100%" onClick={() => setZoom(1)}>{Math.round(layout.viewport.zoom * 100)}%</button>
-        <button aria-label="Retornar à origem" title="Retornar à origem" onClick={() => updateLayout((current) => ({ ...current, viewport: { ...DEFAULT_VIEWPORT } }), true)}><RotateCcw size={15} /></button>
-        <button aria-label="Ajustar todos os agentes" title="Ajustar todos" onClick={() => fitAll()}><Scan size={15} /></button>
-      </div>
+      {loaded && filteredSessions.length === 0 && <div className="mapping-empty"><Workflow size={28} /><strong>Nenhuma sessão neste escopo.</strong></div>}
       <MappingMinimap nodes={layout.nodes} mode={layout.mode} viewport={layout.viewport} canvas={canvasSize} onCenter={(x, y) => updateLayout((current) => ({ ...current, viewport: { ...current.viewport, x: canvasSize.width / 2 - x * current.viewport.zoom, y: canvasSize.height / 2 - y * current.viewport.zoom } }), true)} />
     </div>
   </section>;

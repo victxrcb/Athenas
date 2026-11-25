@@ -35,6 +35,8 @@ type AppState = {
   section: Section;
   setSection: (section: Section) => void;
   targetPaneId: string | null;
+  mappingSession: { projectId: string | null; onCreated: (session: SessionInfo) => void } | null;
+  openMappingSession: (projectId: string | null, onCreated: (session: SessionInfo) => void) => void;
   openSessionInPane: (paneId: string) => void;
   setPaletteOpen: (open: boolean) => void;
   setWorkspace: (workspace: WorkspaceSnapshot) => void;
@@ -68,9 +70,11 @@ export const useAppStore = create<AppState>((set) => ({
     ? { sessions: state.sessions.map((item) => (item.id === session.id ? session : item)) }
     : { sessions: [...state.sessions, session] })),
   setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
-  openSession: () => set({ sessionOpen: true, targetPaneId: null }),
-  openSessionInPane: (targetPaneId) => set({ sessionOpen: true, targetPaneId }),
-  closeSession: () => set({ sessionOpen: false }),
+  mappingSession: null,
+  openMappingSession: (projectId, onCreated) => set({ sessionOpen: true, targetPaneId: null, mappingSession: { projectId, onCreated } }),
+  openSession: () => set({ sessionOpen: true, targetPaneId: null, mappingSession: null }),
+  openSessionInPane: (targetPaneId) => set({ sessionOpen: true, targetPaneId, mappingSession: null }),
+  closeSession: () => set({ sessionOpen: false, mappingSession: null }),
   openProject: () => set({ projectOpen: true }),
   closeProject: () => set({ projectOpen: false }),
   openGroup: () => set({ groupOpen: true }),
