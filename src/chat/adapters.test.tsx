@@ -73,6 +73,12 @@ describe('Claude Code transcript', () => {
     expect(transcript.items).toMatchObject([{ type: 'user', text: 'depois rode os testes' }]);
   });
 
+  it('shows queued messages that carry images', () => {
+    const prompt = [{ type: 'text', text: '[Image #1]ajuste a cor' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }];
+    const transcript = read(claudeAdapter, [{ type: 'attachment', uuid: 'q', timestamp: at(1), attachment: { type: 'queued_command', prompt } }]);
+    expect(transcript.items).toMatchObject([{ type: 'user', text: '[Image #1]ajuste a cor', images: ['data:image/png;base64,AAAA'] }]);
+  });
+
   it('survives malformed records', () => {
     expect(read(claudeAdapter, [null, { type: 'assistant' }, { type: 'user', uuid: 'u', message: { content: 'ok' } }]).items).toHaveLength(1);
   });

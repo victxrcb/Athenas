@@ -75,6 +75,12 @@ function complete(builder: Builder, block: any, record: any, line: Line) {
   put(builder, next);
 }
 
+const messageText = (content: unknown) => (Array.isArray(content) ? blocksText(content.filter((block: any) => block?.type === 'text')) : text(content));
+
+const imagesIn = (content: unknown): string[] => (Array.isArray(content) ? content : [])
+  .filter((block: any) => block?.type === 'image' && block.source?.type === 'base64' && /^image\/(png|jpe?g|gif|webp)$/.test(block.source.media_type))
+  .map((block: any) => `data:${block.source.media_type};base64,${block.source.data}`);
+
 function userRecord(builder: Builder, record: any, line: Line) {
   const content = record.message?.content;
   const at = time(record.timestamp);
@@ -83,15 +89,11 @@ function userRecord(builder: Builder, record: any, line: Line) {
     put(builder, { type: 'notice', id, at, offset: line.o, tone: 'info', text: 'Resumo da conversa compactada', detail: blocksText(content) });
     return;
   }
-  const images: string[] = [];
-  let body = '';
+  const images = imagesIn(content);
   if (Array.isArray(content)) {
-    for (const block of content) {
-      if (block?.type === 'tool_result') complete(builder, block, record, line);
-      else if (block?.type === 'image' && block.source?.type === 'base64' && /^image\/(png|jpe?g|gif|webp)$/.test(block.source.media_type)) images.push(`data:${block.source.media_type};base64,${block.source.data}`);
-    }
-    body = blocksText(content.filter((block: any) => block?.type === 'text'));
-  } else body = text(content);
+    for (const block of content) if (block?.type === 'tool_result') complete(builder, block, record, line);
+  }
+  const body = messageText(content);
   if (record.isMeta) return;
   const trimmed = body.trim();
   if (trimmed.startsWith('[Request interrupted')) {
@@ -161,9 +163,12 @@ export function claudeAdapter(builder: Builder, line: Line) {
   switch (record.type) {
     case 'user': userRecord(builder, record, line); break;
     case 'attachment': {
-      const prompt = text(record.attachment?.prompt);
-      if (record.attachment?.type === 'queued_command' && prompt.trim() && !prompt.trimStart().startsWith('<')) {
-        put(builder, { type: 'user', id: text(record.uuid) || `o${line.o}`, at: time(record.timestamp), offset: line.o, text: prompt, clipped: line.clipped });
+      if (record.attachment?.type !== 'queued_command') break;
+      // A queued message with images is recorded as content blocks instead of plain text.
+      const prompt = messageText(record.attachment.prompt);
+      const images = imagesIn(record.attachment.prompt);
+      if ((prompt.trim() || images.length) && !prompt.trimStart().startsWith('<')) {
+        put(builder, { type: 'user', id: text(record.uuid) || `o${line.o}`, at: time(record.timestamp), offset: line.o, text: prompt, images: images.length ? images : undefined, clipped: line.clipped });
       }
       break;
     }

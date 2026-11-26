@@ -85,13 +85,22 @@ function cacheFor(id: string): Cache {
 const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
 const liveText = (message: LiveMessage) => message.parts.join('');
 
+/** An image placeholder, or an absolute image path (quoted when it has spaces). */
+const IMAGE_REFERENCE = /\[Image #\d+\]|"(?:[a-z]:[\\/]|\/)[^"\n]*\.(?:png|jpe?g|gif|webp|bmp)"|(?:[a-z]:[\\/]|\/)[^\s"]*\.(?:png|jpe?g|gif|webp|bmp)/gi;
+/** The agents record a sent image path as `[Image #1]`, possibly elsewhere in the text, so user messages are compared without either. */
+const typed = (value: string) => value.replace(IMAGE_REFERENCE, '').replace(/\s+/g, '');
+
 /** True when the file already holds this text, written around the same time. */
 function recorded(items: ChatItem[], type: 'user' | 'assistant', value: string, since: number, tolerance = 15_000): boolean {
-  const wanted = normalize(value).slice(0, 160);
-  if (!wanted) return true;
+  if (!normalize(value)) return true;
+  const comparable = type === 'user' ? typed : normalize;
+  const wanted = comparable(value).slice(0, 160);
   for (let index = items.length - 1; index >= 0 && index >= items.length - 60; index--) {
     const item = items[index];
-    if (item.type === type && (item.at === null || item.at >= since - tolerance) && normalize(item.text).includes(wanted)) return true;
+    if (item.type !== type || (item.at !== null && item.at < since - tolerance)) continue;
+    const found = comparable(item.text);
+    // A message made only of images matches only another one without text.
+    if (wanted ? found.includes(wanted) : !found) return true;
   }
   return false;
 }

@@ -13,7 +13,7 @@ import { useAppStore, type SessionInfo } from '../store';
 import { ChatView } from './ChatView';
 import { useChatPrefs } from './prefs';
 import { SessionSurface } from './SessionSurface';
-import { applyLiveEvent, composeItems, forgetChat, receiveChunk, receiveLive, useChatStore, type Chunk } from './store';
+import { addOutbox, applyLiveEvent, composeItems, forgetChat, receiveChunk, receiveLive, useChatStore, type Chunk } from './store';
 import { receivePermissions } from './sync';
 
 const session: SessionInfo = { id: 's1', agent: 'Claude Code', folder: 'C:\\p', command: 'claude', resumeId: 'r', paneId: null, status: 'rodando', title: 'Correção' };
@@ -61,6 +61,26 @@ describe('chat view', () => {
     fireEvent.click(screen.getByRole('button', { name: /Passo 1/ }));
     expect(screen.getByText('saida 1')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Copiar comando' })).toBeTruthy();
+  });
+
+  it('drops the queued copy once the file records a message whose image path became a placeholder', () => {
+    const path = '"C:\\Users\\Ana Lima\\AppData\\clipboard\\81db721f.png"';
+    const record = (uuid: string, text: string) => ({ type: 'user', uuid, timestamp: new Date().toISOString(), message: { content: [{ type: 'text', text }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }] } });
+    const queued = () => useChatStore.getState().sessions.s1.outbox.map((item) => item.text);
+    receiveChunk('s1', 'Claude Code', chunk([]));
+    addOutbox('s1', `veja a tela\n\n${path}`);
+    // Another message with an image must not clear it.
+    receiveChunk('s1', 'Claude Code', chunk([record('u0', '[Image #1]outro assunto')]));
+    expect(queued()).toHaveLength(1);
+    receiveChunk('s1', 'Claude Code', chunk([record('u1', '[Image #2]veja a tela')]));
+    expect(queued()).toEqual([]);
+    // The placeholder can also stay in the middle, and a message can be only the image.
+    addOutbox('s1', `compare ${path} com o layout`);
+    receiveChunk('s1', 'Claude Code', chunk([record('u2', 'compare [Image #3] com o layout')]));
+    expect(queued()).toEqual([]);
+    addOutbox('s1', path);
+    receiveChunk('s1', 'Claude Code', chunk([record('u3', '[Image #4]')]));
+    expect(queued()).toEqual([]);
   });
 
   it('streams live text and replaces it once the file records it', async () => {
