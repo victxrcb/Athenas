@@ -184,9 +184,7 @@ fn deliver(app: &AppHandle, item: &ScheduledPrompt) -> Result<String, String> {
 }
 
 fn type_prompt(state: &TerminalState, id: &str, agent: &str, text: &str) -> Result<(), String> {
-    crate::terminal::write_session(state, id, &crate::links::paste_payload(agent, text))?;
-    thread::sleep(Duration::from_millis(150));
-    crate::terminal::write_session(state, id, "\r")
+    crate::links::submit(state, id, agent, &crate::links::paste_payload(agent, text))
 }
 
 #[tauri::command]

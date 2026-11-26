@@ -3,7 +3,7 @@ import { attachmentReference, messageWithAttachments } from './attachments';
 import { buildBlocks, findMatches, stableBlocks } from './blocks';
 import { apply, createBuilder, snapshot, type Adapter } from './builder';
 import { claudeAdapter } from './claudeAdapter';
-import { codexAdapter, commandText } from './codexAdapter';
+import { codexAdapter, commandText, describeCall } from './codexAdapter';
 import { needsTerminal } from './commands';
 import { mergeChanges, parseUnifiedDiff, splitRows, unifiedRows } from './diff';
 import { fileTarget } from './actions';
@@ -115,6 +115,37 @@ describe('Codex rollout', () => {
       { type: 'event_msg', payload: { type: 'turn_aborted', reason: 'interrupted' } },
     ]);
     expect(transcript.items.map((entry) => (entry.type === 'tool' ? `${entry.name}:${entry.status}:${entry.output}` : entry.type))).toEqual(['user', 'shell:done:ok', 'notice']);
+  });
+
+  it('shows what a running call is doing until it ends, across waits', () => {
+    const call = (call_id: string, input: string, name = 'exec') => ({ type: 'response_item', payload: name === 'wait' ? { type: 'function_call', call_id, name, arguments: input } : { type: 'custom_tool_call', call_id, name, input } });
+    const output = (call_id: string, body: string) => ({ type: 'response_item', payload: { type: 'custom_tool_call_output', call_id, output: [{ type: 'input_text', text: body }] } });
+    const records: any[] = [
+      item(1, { type: 'UserMessage', id: 'u', content: [{ type: 'text', text: 'Rode os testes' }] }),
+      call('c1', '// @exec: {"yield_time_ms": 1000}\ntext(await tools.exec_command({cmd:"rg -n \\"PBI\\" docs",workdir:"C:\\\\p"}));'),
+    ];
+    const running = () => read(codexAdapter, records).items.filter((entry) => entry.type === 'tool') as ToolItem[];
+    expect(running()).toMatchObject([{ status: 'running', kind: 'command', command: 'rg -n "PBI" docs' }]);
+    records.push(output('c1', 'Script running with cell ID g5:1\nWall time 1.0 seconds\nOutput:\n'), call('w1', '{"cell_id":"g5:1"}', 'wait'), output('w1', 'Script running with cell ID g5:1\n'), call('w2', '{"cell_id":"g5:1"}', 'wait'));
+    expect(running()).toMatchObject([{ status: 'running', command: 'rg -n "PBI" docs' }]);
+    records.push(output('w2', 'Script completed\nOutput:\n'));
+    expect(running()).toEqual([]);
+    // A call left open is closed with its turn.
+    records.push(call('c2', 'await tools.mcp__azure-devops__wit_backlog({});'));
+    expect(running()).toMatchObject([{ kind: 'mcp', target: 'azure-devops · wit_backlog' }]);
+    records.push({ type: 'event_msg', payload: { type: 'task_complete' } });
+    expect(running()).toEqual([]);
+    // An interruption also closes calls made before a message sent during the turn.
+    records.push(call('c3', 'await tools.exec_command({cmd:"sleep 9"});'), item(9, { type: 'UserMessage', id: 'u2', content: [{ type: 'text', text: 'pare' }] }), { type: 'event_msg', payload: { type: 'turn_aborted', reason: 'interrupted' } });
+    expect(running()).toEqual([]);
+  });
+
+  it('names the tools a call script uses', () => {
+    expect(describeCall('exec', 'await tools.apply_patch("*** Begin Patch\\n*** Update File: src/a.ts\\n@@")')).toMatchObject({ kind: 'edit', target: 'src/a.ts', filePath: 'src/a.ts' });
+    expect(describeCall('exec', "const r = await tools.exec_command({cmd:'git status'}); await tools.exec_command({cmd:'git log'})")).toMatchObject({ kind: 'command', command: 'git status', target: 'git status (+1)' });
+    expect(describeCall('exec', 'await tools.write_stdin({session_id: 1})')).toMatchObject({ kind: 'other', target: 'um comando em execução' });
+    expect(describeCall('exec', 'text(ALL_TOOLS)')).toMatchObject({ kind: 'other', target: 'um script' });
+    expect(describeCall('shell', '{"command":["bash","-lc","ls"]}')).toMatchObject({ kind: 'command', command: 'ls' });
   });
 
   it('keeps a message the user repeats and drops only its copies', () => {

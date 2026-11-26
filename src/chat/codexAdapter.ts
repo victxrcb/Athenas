@@ -1,4 +1,4 @@
-import { blocksText, cancelRunning, put, text, time, type Builder } from './builder';
+import { blocksText, cancelRunning, put, text, time, toolAt, type Builder } from './builder';
 import { hunkStats, parseUnifiedDiff } from './diff';
 import type { FileChange, Line, ToolItem, ToolStatus } from './model';
 
@@ -78,6 +78,51 @@ function completedItem(builder: Builder, item: any, line: Line, at: number | nul
   }
 }
 
+const STRING_LITERAL = /\b(?:cmd|command)["']?\s*:\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)/;
+const PATCHED_FILE = /\*\*\* (?:Add|Update|Delete) File: (.+?)(?=\\r|\\n|["'`\r\n]|$)/gm;
+const BACKGROUND = 'um comando em execução';
+
+const unquote = (literal: string) => literal.slice(1, -1).replace(/\\(.)/g, (_, char) => (char === 'n' ? '\n' : char === 't' ? '\t' : char));
+
+type CallSummary = Pick<ToolItem, 'kind' | 'target'> & { command?: string; filePath?: string };
+
+/**
+ * What an unfinished call is doing. Recent releases wrap every tool in a script run by `exec`, so the
+ * tools it names are read from the script; older ones record the tool and its arguments directly.
+ */
+export function describeCall(name: string, raw: string): CallSummary {
+  const script = [...raw.matchAll(/\btools\.([\w-]+)\s*\(/g)];
+  const tool = name === 'exec' ? script[0]?.[1] ?? '' : name;
+  const more = script.length > 1 ? ` (+${script.length - 1})` : '';
+  if (tool === 'apply_patch') {
+    const files = [...raw.matchAll(PATCHED_FILE)].map((match) => match[1].replace(/\\\\/g, '\\'));
+    return { kind: 'edit', target: files.length > 1 ? `${files.length} arquivos` : files[0] ?? 'arquivos', filePath: files.length === 1 ? files[0] : undefined };
+  }
+  if (tool.startsWith('mcp__')) {
+    const [, server, ...rest] = tool.split('__');
+    return { kind: 'mcp', target: `${server} · ${rest.join('__')}${more}` };
+  }
+  if (tool === 'web__run') return { kind: 'web', target: `a web${more}` };
+  if (tool === 'write_stdin') return { kind: 'other', target: BACKGROUND };
+  let command = '';
+  const literal = STRING_LITERAL.exec(name === 'exec' ? raw.slice(script[0]?.index ?? raw.length) : '');
+  if (literal) command = unquote(literal[1]);
+  else if (name !== 'exec') {
+    try { const input = JSON.parse(raw); command = commandText(input.cmd ?? input.command ?? input.action?.command); } catch { /* not a command */ }
+  }
+  if (command) return { kind: 'command', target: `${command}${more}`, command };
+  // The command is built at run time, so the script does not show it.
+  if (tool === 'exec_command') return { kind: 'other', target: `comandos no terminal${more}` };
+  return { kind: 'other', target: tool || 'um script' };
+}
+
+/** Marks the call records still open when their turn ends. */
+function finishCalls(builder: Builder) {
+  builder.items.forEach((item, index) => {
+    if (item.type === 'tool' && item.fallback && item.status === 'running') builder.items[index] = { ...item, status: 'done' };
+  });
+}
+
 /** Codex logs the same message as an item, an event and a response; keep one. */
 function addMessage(builder: Builder, role: 'user' | 'assistant', body: string, base: { id: string; at: number | null; offset: number; clipped?: boolean }) {
   // The copies are written next to each other; anything in between means it was said again.
@@ -110,11 +155,14 @@ export function codexAdapter(builder: Builder, line: Line) {
     builder.meta.permissionMode = [text(payload.approval_policy), text(payload.sandbox_policy?.type)].filter(Boolean).join(' · ') || builder.meta.permissionMode;
   } else if (record.type === 'event_msg') {
     switch (payload.type) {
-      case 'task_started': builder.meta.turnOpen = true; break;
-      case 'task_complete': builder.meta.turnOpen = false; break;
+      // A turn cut off without a closing record leaves nothing running in the next one.
+      case 'task_started': builder.meta.turnOpen = true; finishCalls(builder); break;
+      case 'task_complete': builder.meta.turnOpen = false; finishCalls(builder); break;
       case 'turn_aborted':
         builder.meta.turnOpen = false;
         cancelRunning(builder);
+        // Calls made before a message sent during the turn are still open too.
+        finishCalls(builder);
         put(builder, { type: 'notice', ...base, tone: 'warning', text: payload.reason === 'interrupted' ? 'Interrompido pelo usuário' : 'Turno cancelado' });
         break;
       case 'item_completed': completedItem(builder, payload.item, line, at); break;
@@ -146,14 +194,26 @@ export function codexAdapter(builder: Builder, line: Line) {
     }
     const callId = text(payload.call_id);
     if (!callId) return;
-    const id = `call:${callId}`;
+    const id = builder.calls.get(callId) ?? `call:${callId}`;
     if (payload.type.endsWith('_output')) {
-      const position = builder.index.get(id);
-      const previous = position === undefined ? undefined : builder.items[position];
-      if (previous?.type === 'tool') put(builder, { ...previous, status: previous.kind === 'question' ? previous.status : 'done', output: blocksText(payload.output) || text(payload.output) });
+      const previous = toolAt(builder, id);
+      if (!previous) return;
+      const output = blocksText(payload.output) || text(payload.output);
+      // The command outlived this call; it stays in progress until a later `wait` reports its end.
+      const cell = /^Script running with cell ID (\S+)/.exec(output)?.[1];
+      if (cell) { builder.cells.set(cell, id); return; }
+      put(builder, { ...previous, status: previous.kind === 'question' ? previous.status : 'done', output });
       return;
     }
     const raw = text(payload.arguments) || text(payload.input) || (payload.action ? JSON.stringify(payload.action) : '');
+    if (payload.name === 'wait') {
+      let cell = '';
+      try { cell = String(JSON.parse(raw).cell_id ?? ''); } catch { /* shown as an unknown wait */ }
+      const waited = builder.cells.get(cell);
+      if (waited) { builder.calls.set(callId, waited); return; }
+      put(builder, { type: 'tool', ...base, id, name: 'wait', kind: 'other', target: BACKGROUND, status: 'running', input: raw, fallback: true });
+      return;
+    }
     if (String(payload.name).startsWith('request_user_input')) {
       // The only structured question Codex records; answering it happens in the terminal.
       let questions: any[] = [];
@@ -164,6 +224,7 @@ export function codexAdapter(builder: Builder, line: Line) {
       });
       return;
     }
-    put(builder, { type: 'tool', ...base, id, name: text(payload.name) || 'Ferramenta', kind: 'other', target: text(payload.name), status: 'running', input: raw, fallback: true });
+    const name = text(payload.name) || (payload.action ? 'shell' : 'Ferramenta');
+    put(builder, { type: 'tool', ...base, id, name, ...describeCall(name, raw), status: 'running', input: raw, fallback: true });
   }
 }

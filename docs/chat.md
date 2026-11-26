@@ -8,7 +8,7 @@ O chat é uma segunda leitura da mesma sessão de terminal. Ele não inicia, rei
 |---|---|---|
 | Histórico (mensagens, ferramentas, resultados, diffs) | `~/.claude/projects/**/<id>.jsonl` | `~/.codex/sessions/**/rollout-*.jsonl` |
 | Texto em streaming | hook `MessageDisplay` | não disponível: a mensagem aparece quando é gravada |
-| Ferramenta em andamento | hooks `PreToolUse` / `PostToolUse` | aparece quando termina |
+| Ferramenta em andamento | hooks `PreToolUse` / `PostToolUse` | registro da chamada no arquivo; o nome da ação é lido do script `exec` |
 | Aprovações e perguntas | hook `PermissionRequest`, respondidas no chat | aviso no chat, resposta no terminal |
 | Envio e interrupção | digitados no PTY (colagem delimitada + Enter, Esc) | igual |
 
@@ -25,6 +25,8 @@ O diálogo do terminal continua aparecendo enquanto o hook espera. A primeira re
 As decisões passam por `agent-events.sqlite3` na pasta de dados do app. Um processo do mesmo usuário poderia gravar nesse arquivo, inclusive um comando já autorizado ao agente.
 
 ## Envio seguro
+
+No Codex o app digita a tecla End entre o texto e o Enter. No Windows o Codex lê a colagem como uma rajada de teclas, e um Enter dentro dela vira quebra de linha, deixando a mensagem sem enviar. Se mesmo assim a mensagem não for registrada em 20 segundos, o chat aponta para o terminal.
 
 Antes do primeiro envio, o app espera um sinal do processo atual (hook ou escrita na conversa). Sem esse sinal, pede confirmação, porque um aviso aberto no TUI receberia as teclas. Com solicitação pendente o envio é bloqueado. Menus abertos manualmente no terminal (por exemplo `/model`) não são detectados.
 

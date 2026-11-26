@@ -12,7 +12,6 @@ use std::{
     path::{Component, Path, PathBuf},
     process::Command,
     sync::Mutex,
-    thread,
     time::{Duration, SystemTime},
 };
 use tauri::{AppHandle, Manager};
@@ -613,9 +612,7 @@ pub async fn chat_send(app: AppHandle, session_id: String, text: String, force: 
         }
         // A one-line command is typed, so the CLI recognises it as a command rather than pasted text.
         let payload = if text.starts_with('/') && !text.contains('\n') { text } else { crate::links::paste_payload(&agent, &text) };
-        terminal::write_session(&terminals, &id, &payload)?;
-        thread::sleep(Duration::from_millis(150));
-        terminal::write_session(&terminals, &id, "\r")
+        crate::links::submit(&terminals, &id, &agent, &payload)
     })
     .await
     .map_err(|e| e.to_string())?

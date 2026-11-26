@@ -158,6 +158,26 @@ describe('chat view', () => {
     expect(invoke).toHaveBeenCalledWith('chat_bind', { sessionId: 's1', conversationId: 'c2' });
   });
 
+  it('points to the terminal when Codex never records a message', async () => {
+    vi.useFakeTimers();
+    try {
+      const codex: SessionInfo = { ...session, agent: 'Codex' };
+      render(<ChatView session={codex} />);
+      act(() => {
+        addOutbox('s1', 'oi');
+        useActivityStore.getState().set('s1', { state: 'working', since: Date.now(), unread: false, message: '' });
+      });
+      expect(screen.getByText('Trabalhando…')).toBeTruthy();
+      await act(() => vi.advanceTimersByTimeAsync(21_000));
+      expect(screen.getByText(/ainda não registrou sua mensagem/)).toBeTruthy();
+      expect(screen.queryByText('Trabalhando…')).toBeNull();
+      // Once Codex records it and the turn opens, the usual activity line returns.
+      act(() => { receiveChunk('s1', 'Codex', chunk([{ type: 'event_msg', timestamp: new Date().toISOString(), payload: { type: 'task_started' } }, { type: 'event_msg', timestamp: new Date().toISOString(), payload: { type: 'user_message', message: 'oi' } }])); });
+      expect(screen.queryByText(/ainda não registrou/)).toBeNull();
+      expect(screen.getByText('Trabalhando…')).toBeTruthy();
+    } finally { vi.useRealTimers(); }
+  });
+
   it('restores an ended conversation without presenting it as running', async () => {
     page = chunk([answer('Histórico salvo'), { type: 'assistant', uuid: 'a2', message: { content: [{ type: 'tool_use', id: 't', name: 'Bash', input: { command: 'sleep' } }] } }]);
     const resume = vi.fn();

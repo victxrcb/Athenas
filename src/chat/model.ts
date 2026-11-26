@@ -56,7 +56,7 @@ export type ToolItem = Base & {
   questions?: Question[];
   answers?: Record<string, string>;
   plan?: string;
-  /** Older Codex records that are shown only when the richer items are absent. */
+  /** Codex call records: once richer items exist, shown only while the call is still running. */
   fallback?: boolean;
 };
 

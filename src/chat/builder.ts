@@ -10,13 +10,17 @@ export type Builder = {
   /** Record identifiers already applied, so a repeated line changes nothing. */
   seen: Set<string>;
   meta: TranscriptMeta;
-  /** Codex releases with completed items make the older call records redundant. */
+  /** Codex releases with completed items make the finished call records redundant. */
   richItems: boolean;
+  /** Codex commands that outlived their call: later records refer to them by cell number. */
+  cells: Map<string, string>;
+  /** Item that a later call record continues, by that call's identifier. */
+  calls: Map<string, string>;
 };
 
 export type Adapter = (builder: Builder, line: Line) => void;
 
-export const createBuilder = (): Builder => ({ items: [], index: new Map(), seen: new Set(), meta: { turnOpen: false }, richItems: false });
+export const createBuilder = (): Builder => ({ items: [], index: new Map(), seen: new Set(), meta: { turnOpen: false }, richItems: false, cells: new Map(), calls: new Map() });
 
 export function put(builder: Builder, item: ChatItem) {
   const position = builder.index.get(item.id);
@@ -42,7 +46,7 @@ export function cancelRunning(builder: Builder) {
 }
 
 export function snapshot(builder: Builder): Transcript {
-  const items = builder.richItems ? builder.items.filter((item) => item.type !== 'tool' || !item.fallback) : builder.items.slice();
+  const items = builder.richItems ? builder.items.filter((item) => item.type !== 'tool' || !item.fallback || item.status === 'running') : builder.items.slice();
   return { items, meta: { ...builder.meta } };
 }
 

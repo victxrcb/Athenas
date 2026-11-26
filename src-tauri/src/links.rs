@@ -120,6 +120,27 @@ pub(crate) fn paste_payload(agent: &str, text: &str) -> String {
     }
 }
 
+/// Keys typed after a message to send it. Codex on Windows reads a paste as a burst of keys, and an Enter
+/// still inside that burst becomes a line break: the message stays unsent in its input box. A navigation key
+/// ends the burst in the order typed, however long the text takes to be read.
+fn submit_keys(agent: &str) -> &'static [&'static str] {
+    if agent == "Codex" {
+        &["\x1b[F", "\r"]
+    } else {
+        &["\r"]
+    }
+}
+
+/// Types `payload` into a running session and submits it.
+pub(crate) fn submit(state: &crate::terminal::TerminalState, id: &str, agent: &str, payload: &str) -> Result<(), String> {
+    crate::terminal::write_session(state, id, payload)?;
+    for key in submit_keys(agent) {
+        thread::sleep(Duration::from_millis(150));
+        crate::terminal::write_session(state, id, key)?;
+    }
+    Ok(())
+}
+
 fn header(from: Option<&SessionRow>) -> String {
     match from {
         Some(row) => format!("[Athenas · instrução do agente {} ({})]", row.agent, short(&row.id)),
@@ -162,12 +183,7 @@ impl LinksDb {
                     Some(target) => {
                         let body = format!("{} {}", header(sender), text);
                         let state = app.state::<crate::terminal::TerminalState>();
-                        crate::terminal::write_session(&state, &to, &paste_payload(&target.agent, &body))
-                            .and_then(|_| {
-                                thread::sleep(Duration::from_millis(150));
-                                crate::terminal::write_session(&state, &to, "\r")
-                            })
-                            .err()
+                        submit(&state, &to, &target.agent, &paste_payload(&target.agent, &body)).err()
                     }
                 };
                 let _ = connection.execute(
@@ -472,5 +488,8 @@ mod tests {
     fn paste_keeps_lines_in_one_prompt() {
         assert_eq!(paste_payload("Claude Code", "a\r\nb"), "\x1b[200~a\nb\x1b[201~");
         assert_eq!(paste_payload("Shell", "a\nb"), "a\rb");
+        assert_eq!(submit_keys("Codex"), ["\x1b[F", "\r"]);
+        assert_eq!(submit_keys("Claude Code"), ["\r"]);
+        assert_eq!(submit_keys("Shell"), ["\r"]);
     }
 }

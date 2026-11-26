@@ -22,6 +22,8 @@ import { useChatSync } from './sync';
 import { toolLabel, type ChatScope } from './Tools';
 
 const STARTUP_PATIENCE = 6_000;
+/** Codex records a message as soon as it receives it. */
+const UNRECORDED_PATIENCE = 20_000;
 
 /** The command or file that identifies what a request is about. */
 const subject = (input: any) => input?.command ?? input?.file_path ?? input?.url ?? input?.questions?.[0]?.question ?? JSON.stringify(input ?? null);
@@ -101,6 +103,15 @@ export function ChatView({ session, onResume, split = true, showHeader = true }:
     const timer = window.setTimeout(() => setSlow(true), STARTUP_PATIENCE);
     return () => window.clearTimeout(timer);
   }, [silent, session.id]);
+  // With no turn open, a message that stays unrecorded did not reach Codex: nothing is being worked on.
+  const unrecorded = working && session.agent === 'Codex' && !chat.transcript.meta.turnOpen && !chat.candidates.length ? chat.outbox[0]?.at ?? null : null;
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    setStalled(false);
+    if (unrecorded === null) return;
+    const timer = window.setTimeout(() => setStalled(true), Math.max(0, unrecorded + UNRECORDED_PATIENCE - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [unrecorded, session.id]);
   return <section className="chat" data-chat={session.id} data-width={width} aria-label={`Conversa com ${session.agent}`}
     onKeyDown={(event) => { if (event.ctrlKey && event.key.toLowerCase() === 'f') { event.preventDefault(); setSearching(true); } }}>
     {showHeader && <ChatHeader session={session} chat={chat} info={info} changedFiles={changes.length} searching={searching} split={split}
@@ -136,7 +147,8 @@ export function ChatView({ session, onResume, split = true, showHeader = true }:
       {slow && silent && !attention && <TerminalAttention message="O Claude Code ainda não confirmou que está pronto. Se for a primeira vez nesta pasta, confirme a confiança no terminal." scope={scope} />}
       {requests.map((request) => <RequestCard key={request.id} request={request} scope={scope} />)}
       {attention && <TerminalAttention message={activity.message} scope={scope} />}
-      {working && !requests.length && <div className="chat-activity" role="status"><i aria-hidden="true" /><span title={doing}>{doing}</span><Elapsed sessionId={session.id} /></div>}
+      {stalled && !attention && <TerminalAttention message="O Codex ainda não registrou sua mensagem. Veja no terminal se ela ficou na caixa de digitação ou se há um aviso aberto." scope={scope} />}
+      {working && !stalled && !requests.length && <div className="chat-activity" role="status"><i aria-hidden="true" /><span title={doing}>{doing}</span><Elapsed sessionId={session.id} /></div>}
     </MessageList>
     {running
       ? <Composer key={`composer:${session.id}`} session={session} chat={chat} info={info} working={Boolean(working)} blocked={blocked} onTerminal={openTerminal} />

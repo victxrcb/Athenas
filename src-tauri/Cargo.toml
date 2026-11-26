@@ -1,6 +1,6 @@
 [package]
 name = "athenas-agent"
-version = "0.1.31"
+version = "0.1.32"
 license = "MIT"
 description = "Local desktop workspace for coding agents"
 authors = ["Athenas Agent"]
