@@ -3,6 +3,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useActivityStore } from '../activity';
 import { useAppStore, type SessionInfo } from '../store';
+import { markInterrupted, markSent } from './send';
 import { forgetChat, readSession, receiveLive, useChatStore, type LiveEvent, type PermissionRequest } from './store';
 
 const FAST = 500;
@@ -55,12 +56,21 @@ export function receivePermissions(list: PermissionRequest[]) {
   }
 }
 
+/** A paired phone sent a message or interrupted: the session changes as if it had been done here. */
+export function receiveMobileAction({ sessionId, kind, text }: { sessionId: string; kind: string; text: string }) {
+  const session = useAppStore.getState().sessions.find((item) => item.id === sessionId);
+  if (!session) return;
+  if (kind === 'sent') markSent(session, text);
+  else if (kind === 'interrupted') markInterrupted(sessionId);
+}
+
 /** App-wide listeners for the live channel; mounted once by the shell. */
 export function useChatEvents() {
   useEffect(() => {
     if (!isTauri()) return;
     const live = listen<{ sessionId: string; event: LiveEvent }[]>('agent-live', ({ payload }) => receiveLive(payload));
     const permissions = listen<PermissionRequest[]>('agent-permissions', ({ payload }) => receivePermissions(payload));
+    const mobile = listen<{ sessionId: string; kind: string; text: string }>('mobile-action', ({ payload }) => receiveMobileAction(payload));
     void invoke<PermissionRequest[]>('chat_permissions').then((list) => { if (Array.isArray(list)) receivePermissions(list); }).catch(() => undefined);
     const removed = useAppStore.subscribe((state, before) => {
       if (state.sessions === before.sessions) return;
@@ -70,6 +80,6 @@ export function useChatEvents() {
         if (!now || (now.status === 'rodando' && session.status !== 'rodando')) forgetChat(session.id);
       }
     });
-    return () => { removed(); void live.then((off) => off()); void permissions.then((off) => off()); };
+    return () => { removed(); void live.then((off) => off()); void permissions.then((off) => off()); void mobile.then((off) => off()); };
   }, []);
 }

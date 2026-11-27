@@ -200,6 +200,7 @@ pub fn run() {
             mobile::mobile_pairing_cancel,
             mobile::mobile_pairing_decide,
             mobile::mobile_revoke,
+            mobile::mobile_set_control,
             mobile::mobile_publish
         ])
         .build(tauri::generate_context!())

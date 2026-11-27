@@ -98,6 +98,15 @@ impl ChatState {
     fn events(&self) -> Result<Connection, String> {
         crate::notify::open(&self.events_db)
     }
+
+    /// Permission requests waiting for an answer, of every session.
+    pub fn pending(&self) -> Result<Vec<crate::live::PendingPermission>, String> {
+        Ok(crate::live::pending(&self.events()?))
+    }
+
+    pub fn decide(&self, session: &str, request: &str, decision: &crate::live::Decision) -> Result<(), String> {
+        crate::live::decide(&self.events()?, session, request, decision)
+    }
 }
 
 fn home() -> Option<PathBuf> {
@@ -495,32 +504,33 @@ pub struct Chunk {
 /// Reads a session's conversation: the latest page by default, new lines with `from`, older ones with `before`.
 #[tauri::command]
 pub async fn chat_read(app: AppHandle, session_id: String, from: Option<u64>, before: Option<u64>, source: Option<String>) -> Result<Chunk, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let (path, candidates, agent) = resolve(&app, &session_id)?;
-        let empty = |bound: bool, source: String, candidates| Chunk { bound, reset: false, source, start: 0, end: 0, more: false, lines: Vec::new(), candidates };
-        let Some(path) = path else { return Ok(empty(false, String::new(), candidates)) };
-        let name = path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
-        let changed = source.is_some_and(|previous| previous != name);
-        let Ok(meta) = fs::metadata(&path) else {
-            // Claude announces the transcript path before writing the first line.
-            return Ok(Chunk { reset: changed, ..empty(true, name, Vec::new()) });
-        };
-        if fs::canonicalize(&path).map_or(true, |real| !transcript_roots().iter().any(|root| fs::canonicalize(root).is_ok_and(|root| real.starts_with(root)))) {
-            return Err("O arquivo da conversa está fora das pastas dos agentes.".into());
-        }
-        let size = meta.len();
-        let reset = changed || from.is_some_and(|from| from > size);
-        let slice = match (from.filter(|_| !reset), before.filter(|_| !reset)) {
-            (_, Some(before)) => read_backward(&path, &agent, before.min(size), INITIAL_LINES),
-            (Some(from), None) => read_forward(&path, &agent, from),
-            (None, None) => read_backward(&path, &agent, size, INITIAL_LINES),
-        }
-        .map_err(|e| format!("Não foi possível ler a conversa: {e}"))?;
-        let more = from.is_some() && !reset && slice.end > from.unwrap_or(0) && slice.end < size;
-        Ok(Chunk { bound: true, reset, source: name, start: slice.start, end: slice.end, more, lines: slice.lines, candidates: Vec::new() })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || read(&app, &session_id, from, before, source)).await.map_err(|e| e.to_string())?
+}
+
+/// Blocking body of [`chat_read`], also used by the phone server.
+pub fn read(app: &AppHandle, session_id: &str, from: Option<u64>, before: Option<u64>, source: Option<String>) -> Result<Chunk, String> {
+    let (path, candidates, agent) = resolve(app, session_id)?;
+    let empty = |bound: bool, source: String, candidates| Chunk { bound, reset: false, source, start: 0, end: 0, more: false, lines: Vec::new(), candidates };
+    let Some(path) = path else { return Ok(empty(false, String::new(), candidates)) };
+    let name = path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
+    let changed = source.is_some_and(|previous| previous != name);
+    let Ok(meta) = fs::metadata(&path) else {
+        // Claude announces the transcript path before writing the first line.
+        return Ok(Chunk { reset: changed, ..empty(true, name, Vec::new()) });
+    };
+    if fs::canonicalize(&path).map_or(true, |real| !transcript_roots().iter().any(|root| fs::canonicalize(root).is_ok_and(|root| real.starts_with(root)))) {
+        return Err("O arquivo da conversa está fora das pastas dos agentes.".into());
+    }
+    let size = meta.len();
+    let reset = changed || from.is_some_and(|from| from > size);
+    let slice = match (from.filter(|_| !reset), before.filter(|_| !reset)) {
+        (_, Some(before)) => read_backward(&path, &agent, before.min(size), INITIAL_LINES),
+        (Some(from), None) => read_forward(&path, &agent, from),
+        (None, None) => read_backward(&path, &agent, size, INITIAL_LINES),
+    }
+    .map_err(|e| format!("Não foi possível ler a conversa: {e}"))?;
+    let more = from.is_some() && !reset && slice.end > from.unwrap_or(0) && slice.end < size;
+    Ok(Chunk { bound: true, reset, source: name, start: slice.start, end: slice.end, more, lines: slice.lines, candidates: Vec::new() })
 }
 
 /// The untouched line at `offset`, for "view original output".
@@ -573,7 +583,7 @@ pub async fn chat_bind(app: AppHandle, session_id: String, conversation_id: Stri
 }
 
 /// Control characters would end the bracketed paste early or act as keystrokes in the TUI.
-fn clean_message(text: &str) -> Result<String, String> {
+pub(crate) fn clean_message(text: &str) -> Result<String, String> {
     let text: String = text.replace("\r\n", "\n").replace('\r', "\n").chars().filter(|c| *c == '\n' || *c == '\t' || !c.is_control()).collect();
     if text.trim().is_empty() {
         return Err("Escreva uma mensagem.".into());
@@ -588,44 +598,45 @@ fn clean_message(text: &str) -> Result<String, String> {
 /// has not shown it is ready, because a startup dialog would receive the keystrokes instead.
 #[tauri::command]
 pub async fn chat_send(app: AppHandle, session_id: String, text: String, force: bool) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let text = clean_message(&text)?;
-        let terminals = app.state::<TerminalState>();
-        let (id, agent) = terminal::running_target(&terminals, &session_id)
-            .filter(|(id, _)| id == &session_id)
-            .ok_or("Sessão encerrada. Retome a sessão para enviar.")?;
-        if agent == "Shell" {
-            return Err("O chat é usado apenas com agentes.".into());
+    tauri::async_runtime::spawn_blocking(move || send(&app, &session_id, &text, force)).await.map_err(|e| e.to_string())?
+}
+
+/// Blocking body of [`chat_send`], also used by the phone server.
+pub fn send(app: &AppHandle, session_id: &str, text: &str, force: bool) -> Result<(), String> {
+    let text = clean_message(text)?;
+    let terminals = app.state::<TerminalState>();
+    let (id, agent) = terminal::running_target(&terminals, session_id)
+        .filter(|(id, _)| id == session_id)
+        .ok_or("Sessão encerrada. Retome a sessão para enviar.")?;
+    if agent == "Shell" {
+        return Err("O chat é usado apenas com agentes.".into());
+    }
+    let chat = app.state::<ChatState>();
+    if let Ok(connection) = chat.events() {
+        if crate::live::pending(&connection).iter().any(|request| request.session_id == id) {
+            return Err("Responda a solicitação pendente antes de enviar uma mensagem.".into());
         }
-        let chat = app.state::<ChatState>();
-        if let Ok(connection) = chat.events() {
-            if crate::live::pending(&connection).iter().any(|request| request.session_id == id) {
-                return Err("Responda a solicitação pendente antes de enviar uma mensagem.".into());
-            }
+    }
+    if !force {
+        // Finds the conversation file first, in case it appeared since the last read.
+        resolve(app, &id)?;
+        if !chat.ready(&id, terminal::running_since(&terminals, &id)) {
+            return Err("NOT_READY".into());
         }
-        if !force {
-            // Finds the conversation file first, in case it appeared since the last read.
-            resolve(&app, &id)?;
-            if !chat.ready(&id, terminal::running_since(&terminals, &id)) {
-                return Err("NOT_READY".into());
-            }
-        }
-        // A one-line command is typed, so the CLI recognises it as a command rather than pasted text.
-        let payload = if text.starts_with('/') && !text.contains('\n') { text } else { crate::links::paste_payload(&agent, &text) };
-        crate::links::submit(&terminals, &id, &agent, &payload)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }
+    // A one-line command is typed, so the CLI recognises it as a command rather than pasted text.
+    let payload = if text.starts_with('/') && !text.contains('\n') { text } else { crate::links::paste_payload(&agent, &text) };
+    crate::links::submit_unless(&terminals, &id, &agent, &payload, || chat.pending().is_ok_and(|pending| pending.iter().any(|request| request.session_id == id)))
 }
 
 #[tauri::command]
 pub fn chat_permissions(state: tauri::State<'_, ChatState>) -> Result<Vec<crate::live::PendingPermission>, String> {
-    Ok(crate::live::pending(&state.events()?))
+    state.pending()
 }
 
 #[tauri::command]
 pub fn chat_permission_decide(state: tauri::State<'_, ChatState>, session_id: String, request_id: String, decision: crate::live::Decision) -> Result<(), String> {
-    crate::live::decide(&state.events()?, &session_id, &request_id, &decision)
+    state.decide(&session_id, &request_id, &decision)
 }
 
 fn session_folder(app: &AppHandle, session: &str) -> Result<PathBuf, String> {

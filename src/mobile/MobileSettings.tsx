@@ -13,11 +13,14 @@ export type MobileView = {
   error: string | null;
   pairing: { url: string; expiresAt: number } | null;
   request: { id: string; name: string; verification: string } | null;
-  devices: { id: string; name: string; createdAt: number; lastSeenAt: number }[];
+  devices: { id: string; name: string; createdAt: number; lastSeenAt: number; control: boolean; notifications: boolean }[];
+  actions: { at: number; device: string; agent: string; action: string; detail: string }[];
+  pushError: string | null;
 };
 export type TailscaleStatus = { installed: boolean; running: boolean; https: boolean; dnsName: string | null };
 
 const POLL = 1_500;
+const ACTIONS: Record<string, string> = { sent: 'enviou mensagem para', interrupted: 'interrompeu', allowed: 'aprovou em', denied: 'recusou em', answered: 'respondeu em' };
 
 export function lastSeen(at: number, now = Date.now()): string {
   const minutes = Math.floor(Math.max(0, now - at) / 60_000);
@@ -72,6 +75,11 @@ export function MobileSettings() {
   const revoke = async (id: string, name: string) => {
     if (await confirmAction(`O aparelho “${name}” perde o acesso imediatamente.`, { title: 'Revogar acesso?', confirm: 'Revogar' })) await call('mobile_revoke', { deviceId: id });
   };
+  const control = async (id: string, name: string, allow: boolean) => {
+    // Taking the permission away needs no question; giving it does.
+    if (allow && !await confirmAction(`“${name}” poderá ler as conversas, enviar mensagens, interromper e aprovar comandos neste computador.`, { title: 'Liberar este aparelho?', confirm: 'Liberar' })) return;
+    await call('mobile_set_control', { deviceId: id, allow });
+  };
   const copy = (text: string) => void navigator.clipboard.writeText(text).then(() => setNotice('Link copiado. Ele vale por 2 minutos.')).catch((error) => setNotice(String(error)));
   const seconds = view?.pairing ? Math.max(0, Math.ceil((view.pairing.expiresAt - now) / 1000)) : 0;
 
@@ -119,8 +127,19 @@ export function MobileSettings() {
         <small>Aparelhos pareados</small>
         <ul>{view.devices.map((device) => <li key={device.id}>
           <Smartphone size={13} aria-hidden="true" />
-          <span>{device.name}<small>Último acesso {lastSeen(device.lastSeenAt, now)}</small></span>
+          <span>{device.name}<small>Último acesso {lastSeen(device.lastSeenAt, now)} · {device.notifications ? 'notificações ligadas' : 'sem notificações'}</small></span>
           <button type="button" className="button-quiet button-sm danger" onClick={() => void revoke(device.id, device.name)}>Revogar</button>
+          <label className="mobile-control">
+            <input type="checkbox" checked={device.control} onChange={(event) => void control(device.id, device.name, event.target.checked)} />
+            Pode conversar e aprovar
+          </label>
+        </li>)}</ul>
+      </div>}
+      {view?.pushError && <p className="mobile-error" role="alert">Última notificação: {view.pushError}</p>}
+      {view && view.actions.length > 0 && <div className="mobile-devices">
+        <small>Últimas ações pelo celular</small>
+        <ul>{view.actions.map((item, index) => <li key={`${item.at}-${index}`}>
+          <span>{item.device} {ACTIONS[item.action] ?? item.action} “{item.agent}”<small title={item.detail}>{new Date(item.at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}{item.detail && ` · ${item.detail}`}</small></span>
         </li>)}</ul>
       </div>}
     </div>

@@ -1,12 +1,23 @@
 //! Access from the user's phone: a loopback web server published on their Tailscale network, the devices
 //! allowed to use it and the commands behind the "Celular" settings. Off until the user turns it on.
+mod app;
 mod auth;
+mod control;
+mod notices;
+mod push;
 mod server;
 mod tailscale;
 
-use crate::terminal::{self, SessionInfo, TerminalState};
+use crate::{
+    live::{Decision, PendingPermission},
+    terminal::{self, SessionInfo, TerminalState},
+};
+use app::{AppHost, Entry, Log};
 use auth::{Auth, Device, Outcome, PendingRequest};
+use control::{Access, Action, Page, Recent};
+use push::Subscription;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
     collections::HashMap,
     fs,
@@ -26,6 +37,8 @@ const SEEN_SAVE_MS: i64 = 60_000;
 const START_ATTEMPTS: u32 = 12;
 const START_PAUSE: Duration = Duration::from_secs(10);
 const EXIT_DEADLINE: Duration = Duration::from_secs(4);
+/// The same session announcing the same thing again this soon is one event reported twice.
+const NOTICE_PAUSE_MS: i64 = 4_000;
 
 /// One running agent as the phone lists it.
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
@@ -41,14 +54,19 @@ pub struct AgentCard {
     pub label: String,
     pub message: String,
     pub since: Option<i64>,
+    /// `working`, `approval`, `done`, `idle` or empty when nothing was reported yet.
+    pub state: String,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Overview {
     pub computer: String,
     pub theme: Option<String>,
     pub agents: Vec<AgentCard>,
+    /// What the asking device may do; filled in by the server.
+    pub can_control: bool,
+    pub notifications: bool,
 }
 
 /// What only the interface knows about a session: its project and the live status it shows.
@@ -62,6 +80,8 @@ pub struct PublishedAgent {
     #[serde(default)]
     message: String,
     since: Option<i64>,
+    #[serde(default)]
+    state: String,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -88,6 +108,7 @@ fn cards(sessions: Vec<SessionInfo>, published: &Published) -> Vec<AgentCard> {
                 label: shown.map_or_else(|| "Ativo".into(), |item| clip(&item.label, 40)),
                 message: shown.map_or_else(String::new, |item| clip(&item.message, 400)),
                 since: shown.and_then(|item| item.since),
+                state: shown.map_or_else(String::new, |item| clip(&item.state, 20)),
                 project: shown.and_then(|item| item.project.as_deref().map(|name| clip(name, 120))),
                 id: session.id,
                 agent: session.agent,
@@ -98,9 +119,23 @@ fn cards(sessions: Vec<SessionInfo>, published: &Published) -> Vec<AgentCard> {
         .collect()
 }
 
-type Source = Box<dyn Fn() -> Overview + Send + Sync>;
-type Assets = Box<dyn Fn(&str) -> Option<Vec<u8>> + Send + Sync>;
-type Persist = Box<dyn Fn(&[Device]) -> Result<(), String> + Send + Sync>;
+/// Everything the server needs from the desktop app, so it can be tested without one.
+pub trait Host: Send + Sync {
+    fn overview(&self) -> Overview;
+    fn asset(&self, name: &str) -> Option<Vec<u8>>;
+    fn save_devices(&self, devices: &[Device]) -> Result<(), String>;
+    fn conversation(&self, session: &str, page: Page) -> Result<Value, String>;
+    /// Permission requests of this session waiting for an answer.
+    fn requests(&self, session: &str) -> Result<Vec<PendingPermission>, String>;
+    fn send(&self, session: &str, text: &str) -> Result<(), String>;
+    fn interrupt(&self, session: &str) -> Result<(), String>;
+    fn decide(&self, session: &str, request: &str, decision: &Decision) -> Result<(), String>;
+    fn record(&self, action: Action);
+    /// The public half of the key that signs notifications.
+    fn push_key(&self) -> Result<String, String>;
+    /// Sends a sample notification and waits for the answer.
+    fn push_test(&self, subscription: &Subscription) -> Result<(), String>;
+}
 
 /// Which names the server answers to while it is open.
 #[derive(Default)]
@@ -114,14 +149,13 @@ struct Door {
 pub struct Shared {
     auth: Mutex<Auth>,
     door: Mutex<Door>,
-    source: Source,
-    assets: Assets,
-    persist: Persist,
+    host: Box<dyn Host>,
+    recent: Mutex<Recent>,
 }
 
 impl Shared {
-    fn new(devices: Vec<Device>, source: Source, assets: Assets, persist: Persist) -> Self {
-        Self { auth: Mutex::new(Auth::new(devices)), door: Mutex::default(), source, assets, persist }
+    fn new(devices: Vec<Device>, host: Box<dyn Host>) -> Self {
+        Self { auth: Mutex::new(Auth::new(devices)), door: Mutex::default(), host, recent: Mutex::default() }
     }
 
     fn open(&self, port: u16, public_host: Option<String>) {
@@ -168,7 +202,7 @@ impl Shared {
         self.with_auth(|auth| {
             let outcome = auth.collect(request, crate::live::now_ms())?;
             if matches!(outcome, Outcome::Paired(_)) {
-                if let Err(error) = (self.persist)(&auth.devices) {
+                if let Err(error) = self.host.save_devices(&auth.devices) {
                     auth.devices.pop();
                     return Err(format!("Não foi possível salvar o aparelho: {error}"));
                 }
@@ -177,32 +211,39 @@ impl Shared {
         })?
     }
 
-    /// The id of the device holding this token.
-    fn authenticate(&self, token: &str) -> Option<String> {
+    /// The device holding this token.
+    fn authenticate(&self, token: &str) -> Option<Access> {
         let now = crate::live::now_ms();
         self.with_auth(|auth| {
             let before: Vec<(String, i64)> = auth.devices.iter().map(|device| (device.id.clone(), device.last_seen_at)).collect();
-            let id = auth.authenticate(token, now)?.id.clone();
+            let device = auth.authenticate(token, now)?;
+            let access = Access { id: device.id.clone(), name: device.name.clone(), control: device.control };
+            let id = access.id.clone();
             // Comparing periods, not gaps: a phone that asks every few seconds is still saved once a minute.
             if before.iter().any(|(device, seen)| *device == id && now / SEEN_SAVE_MS != seen / SEEN_SAVE_MS) {
-                let _ = (self.persist)(&auth.devices);
+                let _ = self.host.save_devices(&auth.devices);
             }
-            Some(id)
+            Some(access)
         })
         .ok()
         .flatten()
     }
 
+    /// Applies a change to the devices and saves it when something changed.
+    fn change_devices(&self, change: impl FnOnce(&mut Auth) -> bool) -> Result<(), String> {
+        self.with_auth(|auth| if change(auth) { self.host.save_devices(&auth.devices) } else { Ok(()) })?
+    }
+
     fn revoke(&self, device: &str) -> Result<(), String> {
-        self.with_auth(|auth| if auth.revoke(device) { (self.persist)(&auth.devices) } else { Ok(()) })?
+        self.change_devices(|auth| auth.revoke(device))
     }
 
-    fn overview(&self) -> Overview {
-        (self.source)()
+    fn subscription(&self, device: &str) -> Option<Subscription> {
+        self.with_auth(|auth| auth.devices.iter().find(|item| item.id == device).and_then(|item| item.push.clone())).ok().flatten()
     }
 
-    fn asset(&self, name: &str) -> Option<Vec<u8>> {
-        (self.assets)(name)
+    fn subscriptions(&self) -> Vec<Subscription> {
+        self.with_auth(|auth| auth.devices.iter().filter_map(|device| device.push.clone()).collect()).unwrap_or_default()
     }
 }
 
@@ -212,11 +253,14 @@ struct Config {
     enabled: bool,
     port: u16,
     devices: Vec<Device>,
+    /// Signs the notifications; created when a device first asks for them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signing_key: Option<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { enabled: false, port: DEFAULT_PORT, devices: Vec::new() }
+        Self { enabled: false, port: DEFAULT_PORT, devices: Vec::new(), signing_key: None }
     }
 }
 
@@ -251,6 +295,18 @@ impl Store {
         *config = next;
         Ok(())
     }
+
+    fn signing_key(&self) -> Result<String, String> {
+        if let Some(key) = self.snapshot().signing_key {
+            return Ok(key);
+        }
+        let fresh = push::generate_key()?;
+        // Another thread may have created it in the meantime; the first one stays.
+        self.update(|config| {
+            config.signing_key.get_or_insert(fresh);
+        })?;
+        self.snapshot().signing_key.ok_or_else(|| "Não foi possível criar a chave das notificações.".into())
+    }
 }
 
 #[derive(Default)]
@@ -260,6 +316,10 @@ struct Runtime {
     url: Option<String>,
     error: Option<String>,
     pairing: Option<Pairing>,
+    /// Why the latest notification did not go out.
+    push_error: Option<String>,
+    /// When each session last announced each kind of notice.
+    announced: HashMap<(String, &'static str), i64>,
 }
 
 #[derive(Serialize, Clone)]
@@ -276,6 +336,8 @@ pub struct DeviceView {
     name: String,
     created_at: i64,
     last_seen_at: i64,
+    control: bool,
+    notifications: bool,
 }
 
 /// Everything the settings screen shows; token hashes never leave the backend.
@@ -288,28 +350,24 @@ pub struct View {
     pairing: Option<Pairing>,
     request: Option<PendingRequest>,
     devices: Vec<DeviceView>,
+    /// The latest things done from a phone, newest first.
+    actions: Vec<Entry>,
+    push_error: Option<String>,
 }
 
 pub struct MobileState {
     shared: Arc<Shared>,
     store: Arc<Store>,
     published: Arc<Mutex<Published>>,
+    log: Arc<Log>,
     runtime: Mutex<Runtime>,
     /// Held while access is being turned on or off, so two changes never interleave.
     switching: Mutex<()>,
 }
 
-/// Tauri answers a missing file with the desktop page. The MIME type it reports cannot tell them apart,
-/// because it calls any extension it does not know (`.webmanifest`) HTML.
-fn is_fallback_page(name: &str, bytes: &[u8]) -> bool {
-    const DOCTYPE: &[u8] = b"<!doctype html";
-    !name.ends_with(".html") && bytes.get(..DOCTYPE.len()).is_some_and(|start| start.eq_ignore_ascii_case(DOCTYPE))
-}
-
-/// A file of the built interface. In `tauri dev` it comes from `dist/`, so run `npm run build` first.
-fn bundled(app: &AppHandle, name: &str) -> Option<Vec<u8>> {
-    let asset = app.asset_resolver().get(name.to_string())?;
-    (!is_fallback_page(name, &asset.bytes)).then_some(asset.bytes)
+/// Development builds can serve this computer alone, without Tailscale, to try the phone page in a browser.
+fn local_only() -> bool {
+    cfg!(debug_assertions) && std::env::var_os("ATHENAS_MOBILE_LOCAL").is_some()
 }
 
 impl MobileState {
@@ -317,26 +375,10 @@ impl MobileState {
         let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
         let store = Arc::new(Store::load(data.join("mobile.json")));
         let published: Arc<Mutex<Published>> = Arc::default();
-        let (source_app, source_published) = (app.clone(), published.clone());
-        let source: Source = Box::new(move || {
-            let published = source_published.lock().map(|value| value.clone()).unwrap_or_default();
-            let sessions = terminal::live_sessions(&source_app.state::<TerminalState>());
-            let computer = source_app
-                .try_state::<MobileState>()
-                .and_then(|state| state.runtime.lock().ok()?.url.clone())
-                .and_then(|url| url.strip_prefix("https://")?.split('.').next().map(str::to_string))
-                .unwrap_or_default();
-            Overview { computer, agents: cards(sessions, &published), theme: published.theme }
-        });
-        let asset_app = app.clone();
-        let persist_store = store.clone();
-        let shared = Arc::new(Shared::new(
-            store.snapshot().devices,
-            source,
-            Box::new(move |name| bundled(&asset_app, name)),
-            Box::new(move |devices| persist_store.update(|config| config.devices = devices.to_vec())),
-        ));
-        Ok(Self { shared, store, published, runtime: Mutex::default(), switching: Mutex::new(()) })
+        let log = Arc::new(Log::load(data.join("mobile-actions.jsonl")));
+        let host = AppHost { app: app.clone(), store: store.clone(), published: published.clone(), log: log.clone() };
+        let shared = Arc::new(Shared::new(store.snapshot().devices, Box::new(host)));
+        Ok(Self { shared, store, published, log, runtime: Mutex::default(), switching: Mutex::new(()) })
     }
 
     fn runtime(&self) -> Result<std::sync::MutexGuard<'_, Runtime>, String> {
@@ -346,7 +388,18 @@ impl MobileState {
     fn view(&self) -> Result<View, String> {
         let now = crate::live::now_ms();
         let (request, code_active, devices) = self.shared.with_auth(|auth| {
-            let devices = auth.devices.iter().map(|device| DeviceView { id: device.id.clone(), name: device.name.clone(), created_at: device.created_at, last_seen_at: device.last_seen_at }).collect();
+            let devices = auth
+                .devices
+                .iter()
+                .map(|device| DeviceView {
+                    id: device.id.clone(),
+                    name: device.name.clone(),
+                    created_at: device.created_at,
+                    last_seen_at: device.last_seen_at,
+                    control: device.control,
+                    notifications: device.push.is_some(),
+                })
+                .collect();
             (auth.pending(now), auth.code_active(now), devices)
         })?;
         let enabled = self.store.snapshot().enabled;
@@ -355,18 +408,34 @@ impl MobileState {
         if !code_active {
             runtime.pairing = None;
         }
-        Ok(View { enabled, url: runtime.url.clone(), error: runtime.error.clone(), pairing: runtime.pairing.clone(), request, devices })
+        Ok(View {
+            enabled,
+            url: runtime.url.clone(),
+            error: runtime.error.clone(),
+            pairing: runtime.pairing.clone(),
+            request,
+            devices,
+            actions: self.log.latest(5),
+            push_error: runtime.push_error.clone(),
+        })
     }
 
     /// Starts the server if needed and publishes it. Callers hold `switching`.
     fn connect(&self) -> Result<(), String> {
         let port = self.store.snapshot().port;
-        let host = tailscale::ready(&tailscale::status())?;
-        self.listen(port)?;
-        self.shared.open(port, Some(host.clone()));
-        tailscale::publish(port)?;
+        let url = if local_only() {
+            self.listen(port)?;
+            self.shared.open(port, None);
+            format!("http://127.0.0.1:{port}")
+        } else {
+            let host = tailscale::ready(&tailscale::status())?;
+            self.listen(port)?;
+            self.shared.open(port, Some(host.clone()));
+            tailscale::publish(port)?;
+            format!("https://{host}")
+        };
         let mut runtime = self.runtime()?;
-        runtime.url = Some(format!("https://{host}"));
+        runtime.url = Some(url);
         runtime.error = None;
         Ok(())
     }
@@ -392,7 +461,7 @@ impl MobileState {
     /// Removes the Tailscale publication, unless another instance of the app is using the port it points to.
     fn withdraw(&self, served: bool) -> Result<(), String> {
         let port = self.store.snapshot().port;
-        if !served && TcpListener::bind((Ipv4Addr::LOCALHOST, port)).is_err() {
+        if local_only() || !served && TcpListener::bind((Ipv4Addr::LOCALHOST, port)).is_err() {
             return Ok(());
         }
         tailscale::unpublish(port, tailscale::TIMEOUT)
@@ -418,6 +487,63 @@ impl MobileState {
         let removed = self.withdraw(served);
         self.runtime()?.error = removed.err().map(|error| format!("O acesso foi desligado, mas a publicação no Tailscale não foi removida. {error}"));
         Ok(())
+    }
+
+    /// Notifies the phones of sessions that just finished or started waiting for the user.
+    fn announce(&self, app: &AppHandle, previous: &Published, next: &Published) {
+        if !self.store.snapshot().enabled {
+            return;
+        }
+        let subscriptions = self.shared.subscriptions();
+        if subscriptions.is_empty() {
+            return;
+        }
+        let agents = cards(terminal::live_sessions(&app.state::<TerminalState>()), next);
+        let mut due = notices::changes(previous, &agents);
+        let now = crate::live::now_ms();
+        if let Ok(mut runtime) = self.runtime() {
+            due.retain(|notice| {
+                let key = (notice.session.clone(), notice.kind);
+                let fresh = runtime.announced.get(&key).is_none_or(|at| now - at >= NOTICE_PAUSE_MS);
+                if fresh {
+                    runtime.announced.insert(key, now);
+                }
+                fresh
+            });
+        }
+        if due.is_empty() {
+            return;
+        }
+        let key = match self.store.signing_key() {
+            Ok(key) => key,
+            Err(error) => {
+                if let Ok(mut runtime) = self.runtime() {
+                    runtime.push_error = Some(error);
+                }
+                return;
+            }
+        };
+        for notice in due {
+            let (app, key, subscriptions) = (app.clone(), key.clone(), subscriptions.clone());
+            tauri::async_runtime::spawn(async move {
+                let payload = notice.payload();
+                for subscription in subscriptions {
+                    let result = push::deliver(&key, &subscription, &payload, &notice.session).await;
+                    let state = app.state::<MobileState>();
+                    let error = match result {
+                        Ok(()) => None,
+                        Err(push::Failure::Gone) => {
+                            let _ = state.shared.change_devices(|auth| auth.drop_push(&subscription.endpoint));
+                            Some("Um aparelho cancelou as notificações. Ative-as de novo no celular.".to_string())
+                        }
+                        Err(push::Failure::Other(error)) => Some(error),
+                    };
+                    if let Ok(mut runtime) = state.runtime() {
+                        runtime.push_error = error;
+                    };
+                }
+            });
+        }
     }
 }
 
@@ -479,7 +605,7 @@ pub fn start(app: AppHandle) {
 pub fn shutdown(app: &AppHandle) {
     let Some(state) = app.try_state::<MobileState>() else { return };
     // Only what this instance published: another one may be serving on the same port.
-    if state.runtime().is_ok_and(|runtime| runtime.server.is_some()) {
+    if !local_only() && state.runtime().is_ok_and(|runtime| runtime.server.is_some()) {
         let _ = tailscale::unpublish(state.store.snapshot().port, EXIT_DEADLINE);
     }
 }
@@ -547,13 +673,24 @@ pub async fn mobile_revoke(app: AppHandle, device_id: String) -> Result<View, St
     .await
 }
 
-/// The interface reports each session's project and live status, so the phone shows what the desktop shows.
 #[tauri::command]
-pub fn mobile_publish(state: tauri::State<'_, MobileState>, snapshot: Published) -> Result<(), String> {
+pub async fn mobile_set_control(app: AppHandle, device_id: String, allow: bool) -> Result<View, String> {
+    blocking(app, move |state| {
+        state.shared.change_devices(|auth| auth.set_control(&device_id, allow))?;
+        state.view()
+    })
+    .await
+}
+
+/// The interface reports each session's project and live status, so the phone shows what the desktop shows.
+/// Changes in that status are what the phone is notified about.
+#[tauri::command]
+pub fn mobile_publish(app: AppHandle, state: tauri::State<'_, MobileState>, snapshot: Published) -> Result<(), String> {
     if snapshot.items.len() > 500 {
         return Err("Sessões demais.".into());
     }
-    *state.published.lock().map_err(|e| e.to_string())? = snapshot;
+    let previous = std::mem::replace(&mut *state.published.lock().map_err(|e| e.to_string())?, snapshot.clone());
+    state.announce(&app, &previous, &snapshot);
     Ok(())
 }
 
@@ -565,8 +702,49 @@ mod tests {
         SessionInfo { id: id.into(), agent: agent.into(), folder: folder.into(), command: "segredo".into(), resume_id: None, pane_id: None, status: "rodando".into(), title: None }
     }
 
+    /// A host with nothing running, counting how often devices are saved.
+    #[derive(Default)]
+    struct Empty {
+        saves: Arc<Mutex<u32>>,
+    }
+
+    impl Host for Empty {
+        fn overview(&self) -> Overview {
+            Overview::default()
+        }
+        fn asset(&self, _: &str) -> Option<Vec<u8>> {
+            None
+        }
+        fn save_devices(&self, _: &[Device]) -> Result<(), String> {
+            *self.saves.lock().unwrap() += 1;
+            Ok(())
+        }
+        fn conversation(&self, _: &str, _: Page) -> Result<Value, String> {
+            Ok(Value::Null)
+        }
+        fn requests(&self, _: &str) -> Result<Vec<PendingPermission>, String> {
+            Ok(Vec::new())
+        }
+        fn send(&self, _: &str, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn interrupt(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn decide(&self, _: &str, _: &str, _: &Decision) -> Result<(), String> {
+            Ok(())
+        }
+        fn record(&self, _: Action) {}
+        fn push_key(&self) -> Result<String, String> {
+            Ok(String::new())
+        }
+        fn push_test(&self, _: &Subscription) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
     fn empty_shared() -> Shared {
-        Shared::new(Vec::new(), Box::new(|| Overview { computer: String::new(), theme: None, agents: Vec::new() }), Box::new(|_| None), Box::new(|_| Ok(())))
+        Shared::new(Vec::new(), Box::new(Empty::default()))
     }
 
     #[test]
@@ -574,7 +752,7 @@ mod tests {
         let published = Published {
             theme: None,
             items: vec![
-                PublishedAgent { id: "a".into(), project: Some("Loja".into()), tone: "waiting".into(), label: "Aguardando você".into(), message: "x".repeat(900), since: Some(5) },
+                PublishedAgent { id: "a".into(), project: Some("Loja".into()), tone: "waiting".into(), label: "Aguardando você".into(), message: "x".repeat(900), since: Some(5), state: "approval".into() },
                 PublishedAgent { id: "gone".into(), ..PublishedAgent::default() },
             ],
         };
@@ -587,12 +765,9 @@ mod tests {
 
     #[test]
     fn last_seen_is_saved_about_once_a_minute_during_constant_use() {
-        let saves = Arc::new(Mutex::new(0));
-        let counter = saves.clone();
-        let shared = Shared::new(Vec::new(), Box::new(|| Overview { computer: String::new(), theme: None, agents: Vec::new() }), Box::new(|_| None), Box::new(move |_| {
-            *counter.lock().unwrap() += 1;
-            Ok(())
-        }));
+        let host = Empty::default();
+        let saves = host.saves.clone();
+        let shared = Shared::new(Vec::new(), Box::new(host));
         let now = crate::live::now_ms();
         let (code, _) = shared.with_auth(|auth| auth.start_pairing(now)).unwrap().unwrap();
         let id = shared.with_auth(|auth| auth.claim(&code, "a", now)).unwrap().unwrap().id;
@@ -606,15 +781,6 @@ mod tests {
         }
         // One save, or two if a minute turned over while the loop ran.
         assert!((1..=2).contains(&*saves.lock().unwrap()));
-    }
-
-    #[test]
-    fn the_desktop_page_is_not_served_in_place_of_a_missing_file() {
-        let page = b"<!DOCTYPE html><html></html>";
-        assert!(is_fallback_page("assets/gone.js", page) && is_fallback_page("manifest.webmanifest", page));
-        assert!(!is_fallback_page("mobile.html", page));
-        assert!(!is_fallback_page("manifest.webmanifest", br#"{ "name": "Athenas Agent" }"#));
-        assert!(!is_fallback_page("favicon.png", b"\x89PNG"));
     }
 
     #[test]

@@ -16,13 +16,14 @@ body { min-width: 0; font-size: 15px; -webkit-tap-highlight-color: transparent; 
 .phone-link { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-dim); white-space: nowrap; }
 .phone-link i { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); }
 
-.phone-card { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); }
-.phone-card.tone-waiting { border-color: color-mix(in srgb, var(--st-waiting) 55%, var(--border)); background: color-mix(in srgb, var(--st-waiting) 8%, var(--surface-1)); }
+.phone button.phone-card { width: 100%; height: auto; display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); font-weight: 400; text-align: left; }
+.phone button.phone-card:disabled { opacity: 1; }
+.phone button.phone-card.tone-waiting { border-color: color-mix(in srgb, var(--st-waiting) 55%, var(--border)); background: color-mix(in srgb, var(--st-waiting) 8%, var(--surface-1)); }
 .phone-card-icon { display: grid; place-items: center; width: 28px; height: 28px; flex: none; }
 .phone-card-body { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .phone-card-body strong { font-weight: 600; overflow-wrap: anywhere; }
 .phone-card-body small { overflow-wrap: anywhere; }
-.phone-card-body p { margin-top: var(--sp-1); font-size: var(--fs-md); color: var(--text-dim); overflow-wrap: anywhere; }
+.phone-card-message { margin-top: var(--sp-1); font-size: var(--fs-md); color: var(--text-dim); overflow-wrap: anywhere; }
 .phone-card-status { flex: none; display: grid; justify-items: end; gap: 2px; font-size: var(--fs-sm); color: var(--text-dim); }
 .phone-card-status > span { display: inline-flex; align-items: center; gap: 6px; }
 
@@ -42,10 +43,8 @@ body { min-width: 0; font-size: 15px; -webkit-tap-highlight-color: transparent; 
 .phone button.danger { border-color: color-mix(in srgb, var(--error) 45%, var(--border-strong)); color: var(--error); }
 .phone button:disabled { opacity: .5; }
 .phone input { width: 100%; padding: 0 var(--sp-3); border: 1px solid var(--border-strong); background: var(--surface-1); color: var(--text); }
-.phone-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); }
 .phone footer { margin-top: auto; display: grid; justify-items: center; gap: var(--sp-3); padding-top: var(--sp-4); text-align: center; }
 .phone footer p { font-size: var(--fs-sm); color: var(--text-muted); }
-.phone-banner { padding: var(--sp-3); border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent); border-radius: var(--r-md); background: color-mix(in srgb, var(--warning) 10%, transparent); font-size: var(--fs-md); }
 .phone-empty { padding: var(--sp-8) 0; text-align: center; color: var(--text-dim); }
 
 .phone-center { align-items: center; justify-content: center; text-align: center; }
@@ -53,3 +52,73 @@ body { min-width: 0; font-size: 15px; -webkit-tap-highlight-color: transparent; 
 .phone-center form { width: 100%; max-width: 320px; display: grid; gap: var(--sp-3); }
 .phone-center label { display: grid; gap: 6px; font-size: var(--fs-sm); color: var(--text-dim); text-align: left; }
 .phone-number { font-family: var(--font-mono); font-size: 36px; font-weight: 500; letter-spacing: .08em; }
+
+.phone-muted { font-size: var(--fs-sm); color: var(--text-muted); }
+.phone-notifications { display: grid; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); font-size: var(--fs-md); }
+.phone-notifications > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.phone-notifications > div > span { flex: 1; min-width: 160px; }
+.phone-notifications p { color: var(--text-dim); font-size: var(--fs-sm); }
+
+/* Conversation: fixed header and composer, history scrolling between them. */
+.phone-chat { max-width: 640px; height: 100dvh; margin: 0 auto; display: flex; flex-direction: column; }
+.phone-chat p { margin: 0; line-height: var(--lh); }
+.phone-chat button, .phone-chat input, .phone-chat textarea { min-height: 44px; border-radius: var(--r-md); font-size: 15px; }
+.phone-chat button { min-width: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 var(--sp-3); border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); font-weight: 500; }
+.phone-chat button.primary { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); }
+.phone-chat button:disabled { opacity: .5; }
+.phone-chat input[type="text"], .phone-chat textarea { width: 100%; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-strong); background: var(--surface-1); color: var(--text); }
+.phone-chat pre { max-height: 45dvh; margin: var(--sp-2) 0 0; padding: var(--sp-3); overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-0); font-family: var(--font-mono); font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.phone-chat pre .add { color: var(--st-done); }
+.phone-chat pre .remove { color: var(--st-error); }
+.phone-chat code { overflow-wrap: anywhere; }
+.phone-chat a { color: var(--text); }
+
+.phone-chat-header { flex: none; display: flex; align-items: center; gap: var(--sp-3); padding: calc(var(--sp-2) + env(safe-area-inset-top)) var(--sp-3) var(--sp-2); border-bottom: 1px solid var(--border); background: var(--surface-1); }
+.phone-chat-header > div { flex: 1; min-width: 0; }
+.phone-chat-header h1 { margin: 0; overflow: hidden; font-size: var(--fs-lg); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.phone-chat-header small { display: block; overflow: hidden; font-size: var(--fs-xs); color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
+
+.phone-history { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-3); overflow-y: auto; overscroll-behavior: contain; padding: var(--sp-4) var(--sp-3); }
+.phone-history > * { flex: none; }
+.phone-chat button.phone-earlier { align-self: center; font-size: var(--fs-sm); }
+.phone-user { align-self: flex-end; max-width: 88%; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-3); }
+.phone-user p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.phone-user img { display: block; max-width: 100%; border-radius: var(--r-sm); }
+.phone-user.pending { border-style: dashed; }
+.phone-user small { display: block; margin-top: 2px; font-size: var(--fs-xs); color: var(--text-muted); }
+.phone-markdown { overflow-wrap: anywhere; line-height: var(--lh); }
+.phone-markdown > :first-child { margin-top: 0; }
+.phone-markdown > :last-child { margin-bottom: 0; }
+.phone-markdown :is(p, ul, ol, pre, blockquote) { margin: var(--sp-2) 0; }
+.phone-markdown ul, .phone-markdown ol { padding-left: 20px; }
+.phone-markdown :not(pre) > code { padding: 1px 4px; border-radius: var(--r-xs); background: var(--surface-3); font-size: .9em; }
+.phone-markdown blockquote { padding-left: var(--sp-3); border-left: 3px solid var(--border-strong); color: var(--text-dim); }
+.phone-table { overflow-x: auto; }
+.phone-table table { border-collapse: collapse; font-size: var(--fs-md); }
+.phone-table :is(th, td) { padding: 4px 8px; border: 1px solid var(--border); text-align: left; }
+.phone-tool, .phone-tools { font-size: var(--fs-md); color: var(--text-dim); }
+.phone-chat summary { min-height: 32px; padding: 6px 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone-tool summary span { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
+.phone-tool summary em { margin-left: 6px; font-style: normal; color: var(--st-waiting); }
+.phone-tool.status-failed summary em { color: var(--st-error); }
+.phone-tools > .phone-tool { padding-left: var(--sp-3); border-left: 1px solid var(--border); }
+.phone-note { font-size: var(--fs-sm); color: var(--tone, var(--text-muted)); text-align: center; }
+
+.phone-request { display: grid; gap: var(--sp-3); margin: 0; padding: var(--sp-3); border: 1px solid color-mix(in srgb, var(--st-waiting) 60%, var(--border)); border-radius: var(--r-md); background: color-mix(in srgb, var(--st-waiting) 8%, var(--surface-1)); }
+.phone-request h3 { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
+.phone-request h3 small { font-size: var(--fs-xs); font-weight: 400; color: var(--text-muted); }
+.phone-request pre { margin: 0; }
+.phone-request fieldset { display: grid; gap: var(--sp-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+.phone-request legend { margin-bottom: var(--sp-2); padding: 0; font-weight: 500; }
+.phone-option { min-height: 44px; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-1); }
+.phone-option input { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
+.phone-option small { display: block; font-size: var(--fs-sm); color: var(--text-muted); }
+.phone-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); }
+.phone-request .phone-actions > button { flex: 1; }
+
+.phone-composer { flex: none; display: grid; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3) calc(var(--sp-3) + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface-1); }
+.phone-composer form { display: flex; align-items: flex-end; gap: var(--sp-2); }
+.phone-composer textarea { flex: 1; min-width: 0; max-height: 30dvh; resize: none; field-sizing: content; }
+.phone-composer form > div { display: flex; gap: var(--sp-2); }
+.phone-composer .phone-banner { max-height: 20dvh; overflow: auto; }
+.phone-banner { padding: var(--sp-3); border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent); border-radius: var(--r-md); background: color-mix(in srgb, var(--warning) 10%, transparent); font-size: var(--fs-md); }

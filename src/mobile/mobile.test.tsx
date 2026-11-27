@@ -7,7 +7,7 @@ import type { SessionInfo } from '../store';
 const invoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(...args), isTauri: () => true }));
 
-const off: MobileView = { enabled: false, url: null, error: null, pairing: null, request: null, devices: [] };
+const off: MobileView = { enabled: false, url: null, error: null, pairing: null, request: null, devices: [], actions: [], pushError: null };
 const on: MobileView = { ...off, enabled: true, url: 'https://pc.tail1.ts.net' };
 let view: MobileView;
 const wait = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
@@ -64,6 +64,22 @@ describe('mobile settings', () => {
     expect(called('mobile_pairing_cancel')).toHaveLength(1);
   });
 
+  it('asks before letting a phone control the agents, and shows what it did', async () => {
+    view = { ...on, devices: [{ id: 'd1', name: 'Redmi', createdAt: 0, lastSeenAt: 0, control: false, notifications: true }], actions: [{ at: 0, device: 'Redmi', agent: 'API', action: 'allowed', detail: 'Bash: npm test' }] };
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<MobileSettings />);
+    await wait(0);
+    expect(screen.getByText(/Redmi aprovou em “API”/).textContent).toContain('Bash: npm test');
+    fireEvent.click(screen.getByLabelText('Pode conversar e aprovar'));
+    await wait(0);
+    expect(called('mobile_set_control')).toHaveLength(0);
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByLabelText('Pode conversar e aprovar'));
+    await wait(0);
+    expect(called('mobile_set_control')[0][1]).toEqual({ deviceId: 'd1', allow: true });
+    confirm.mockRestore();
+  });
+
   it('describes the last access', () => {
     expect(lastSeen(1_000, 2_000)).toBe('agora há pouco');
     expect(lastSeen(0, 5 * 60_000)).toBe('há 5 min');
@@ -86,8 +102,8 @@ describe('published agents', () => {
       { 1: { state: 'done', since: 3, unread: true, message: 'trecho da resposta' }, 2: { state: 'approval', since: 7, unread: true, message: 'Autorização para Bash' } },
     );
     expect(list).toEqual([
-      { id: '1', project: 'Loja', tone: 'done', label: 'Terminou', message: '', since: 3 },
-      { id: '2', project: 'API', tone: 'waiting', label: 'Aguardando você', message: 'Autorização para Bash', since: 7 },
+      { id: '1', project: 'Loja', tone: 'done', label: 'Terminou', message: '', since: 3, state: 'done' },
+      { id: '2', project: 'API', tone: 'waiting', label: 'Aguardando você', message: 'Autorização para Bash', since: 7, state: 'approval' },
     ]);
   });
 });

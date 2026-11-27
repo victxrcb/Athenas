@@ -1,6 +1,7 @@
 //! Who may talk to the phone server. A phone gets in only after scanning a one-time code shown on this
 //! computer *and* being confirmed here; it then holds a random token of which only the hash is stored.
 //! Time is passed in, so every expiry rule can be tested.
+use super::push::Subscription;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -18,6 +19,12 @@ pub struct Device {
     pub token_hash: String,
     pub created_at: i64,
     pub last_seen_at: i64,
+    /// May open conversations, send messages and approve. Pairing alone only lists the agents.
+    #[serde(default)]
+    pub control: bool,
+    /// Where this device's notifications go, once it asks for them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push: Option<Subscription>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -172,7 +179,7 @@ impl Auth {
             }
             Verdict::Approved => {
                 let token = secret()?;
-                let device = Device { id: uuid::Uuid::new_v4().to_string(), name: request.name.clone(), token_hash: hash(&token), created_at: now, last_seen_at: now };
+                let device = Device { id: uuid::Uuid::new_v4().to_string(), name: request.name.clone(), token_hash: hash(&token), created_at: now, last_seen_at: now, control: false, push: None };
                 self.request = None;
                 self.devices.push(device);
                 // Oldest access goes first when the list is full.
@@ -193,6 +200,39 @@ impl Auth {
         let device = self.devices.iter_mut().find(|device| device.token_hash == wanted)?;
         device.last_seen_at = now;
         Some(device)
+    }
+
+    pub fn set_control(&mut self, id: &str, control: bool) -> bool {
+        let Some(device) = self.devices.iter_mut().find(|device| device.id == id) else { return false };
+        device.control = control;
+        true
+    }
+
+    /// One browser has one subscription: pairing it again must not notify it twice.
+    pub fn set_push(&mut self, id: &str, push: Option<Subscription>) -> bool {
+        if !self.devices.iter().any(|device| device.id == id) {
+            return false;
+        }
+        for device in &mut self.devices {
+            if device.id == id {
+                device.push = push.clone();
+            } else if push.as_ref().is_some_and(|new| device.push.as_ref().is_some_and(|old| old.endpoint == new.endpoint)) {
+                device.push = None;
+            }
+        }
+        true
+    }
+
+    /// Forgets a subscription its push service no longer knows.
+    pub fn drop_push(&mut self, endpoint: &str) -> bool {
+        let mut dropped = false;
+        for device in &mut self.devices {
+            if device.push.as_ref().is_some_and(|push| push.endpoint == endpoint) {
+                device.push = None;
+                dropped = true;
+            }
+        }
+        dropped
     }
 
     pub fn revoke(&mut self, id: &str) -> bool {
@@ -271,6 +311,24 @@ mod tests {
         auth.cancel_pairing();
         assert_eq!(auth.collect(&request.id, 1).unwrap(), Outcome::Expired);
         assert!(auth.devices.is_empty());
+    }
+
+    #[test]
+    fn new_devices_cannot_control_and_a_browser_keeps_one_subscription() {
+        let mut auth = Auth::default();
+        paired(&mut auth, 0);
+        paired(&mut auth, 1);
+        assert!(auth.devices.iter().all(|device| !device.control && device.push.is_none()));
+        let (first, second) = (auth.devices[0].id.clone(), auth.devices[1].id.clone());
+        assert!(auth.set_control(&first, true) && auth.devices[0].control && !auth.devices[1].control);
+        assert!(!auth.set_control("outro", true));
+        let push = Subscription { endpoint: "https://fcm.googleapis.com/a".into(), p256dh: "k".into(), auth: "a".into() };
+        assert!(auth.set_push(&first, Some(push.clone())) && auth.set_push(&second, Some(push.clone())));
+        assert!(auth.devices[0].push.is_none() && auth.devices[1].push.is_some());
+        assert!(auth.drop_push(&push.endpoint) && !auth.drop_push(&push.endpoint));
+        // Devices saved before these fields existed load without control.
+        let old: Device = serde_json::from_str(r#"{"id":"x","name":"n","tokenHash":"h","createdAt":1,"lastSeenAt":1}"#).unwrap();
+        assert!(!old.control && old.push.is_none());
     }
 
     #[test]

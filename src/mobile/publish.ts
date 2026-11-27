@@ -2,11 +2,12 @@
 import { useEffect } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { liveStatus, useActivityStore, type Activity } from '../activity';
+import { translateAgentMessage } from '../notifications';
 import { sameFolder } from '../path';
 import { useAppStore, type SessionInfo, type WorkspaceSnapshot } from '../store';
 import { loadTheme } from '../themes';
 
-export type PublishedAgent = { id: string; project: string | null; tone: string; label: string; message: string; since: number | null };
+export type PublishedAgent = { id: string; project: string | null; tone: string; label: string; message: string; since: number | null; state: string };
 
 export function publishedAgents(sessions: SessionInfo[], workspace: WorkspaceSnapshot, activity: Record<string, Activity>): PublishedAgent[] {
   return sessions
@@ -17,8 +18,8 @@ export function publishedAgents(sessions: SessionInfo[], workspace: WorkspaceSna
       const current = activity[session.id];
       const status = liveStatus(session, current);
       // Only a pending request needs its text. A finished turn's message can quote the answer, so it stays here.
-      const message = status.tone === 'waiting' ? current?.message ?? '' : '';
-      return { id: session.id, project: project?.name ?? null, tone: status.tone, label: status.label, message, since: current?.since ?? null };
+      const message = status.tone === 'waiting' ? translateAgentMessage(current?.message ?? '') : '';
+      return { id: session.id, project: project?.name ?? null, tone: status.tone, label: status.label, message, since: current?.since ?? null, state: current?.state ?? '' };
     });
 }
 

@@ -4,6 +4,9 @@ import logo from '../assets/brand/ui-logo.png';
 import { StatusDot, formatDuration, type StatusTone } from '../status';
 import { THEMES } from '../themes';
 import { ApiError, api, type AgentCard, type Overview } from './api';
+import { ConversationView } from './ConversationView';
+import { Notifications } from './Notifications';
+import { dropLocal, registerWorker } from './push';
 
 const REFRESH = 3_000;
 const PAIR_POLL = 1_500;
@@ -22,6 +25,13 @@ export function takeCode(): string | null {
   const code = /^#pair=([0-9a-f]{64})$/.exec(window.location.hash)?.[1] ?? null;
   if (window.location.hash.startsWith('#pair=')) window.history.replaceState(null, '', window.location.pathname);
   return code;
+}
+
+/** A tapped notification opens the page at `#agent=<session>`. */
+export function takeAgent(): string | null {
+  const match = /^#agent=([0-9a-zA-Z-]{1,64})$/.exec(window.location.hash);
+  if (window.location.hash.startsWith('#agent=')) window.history.replaceState(null, '', window.location.pathname);
+  return match?.[1] ?? null;
 }
 
 function remember(waiting: Waiting | null) {
@@ -44,23 +54,23 @@ function applyPhoneTheme(theme: string | null) {
 
 const needsYou = (agent: AgentCard) => agent.tone === 'waiting';
 
-function Card({ agent, now }: { agent: AgentCard; now: number }) {
+function Card({ agent, now, onOpen }: { agent: AgentCard; now: number; onOpen?: (id: string) => void }) {
   const elapsed = agent.since && (agent.tone === 'running' || agent.tone === 'waiting') ? formatDuration((now - agent.since) / 1000) : null;
-  return <li className={`phone-card tone-${agent.tone}`}>
+  return <li><button type="button" className={`phone-card tone-${agent.tone}`} disabled={!onOpen} onClick={() => onOpen?.(agent.id)}>
     <span className="phone-card-icon"><AgentIcon agent={agent.agent} size={22} /></span>
-    <div className="phone-card-body">
+    <span className="phone-card-body">
       <strong>{agent.title?.trim() || agent.agent}</strong>
       <small>{[agent.agent, agent.project ?? agent.folder].filter(Boolean).join(' · ')}</small>
-      {agent.tone === 'waiting' && agent.message && <p>{agent.message}</p>}
-    </div>
+      {agent.tone === 'waiting' && agent.message && <span className="phone-card-message">{agent.message}</span>}
+    </span>
     <span className="phone-card-status">
       <span><StatusDot info={{ tone: agent.tone as StatusTone, label: agent.label, live: agent.tone === 'running' }} />{agent.label}</span>
       {elapsed && <small>{elapsed}</small>}
     </span>
-  </li>;
+  </button></li>;
 }
 
-function Agents({ overview, offline, onLogout }: { overview: Overview; offline: boolean; onLogout: () => void }) {
+function Agents({ overview, offline, onOpen, onRefresh, onLogout }: { overview: Overview; offline: boolean; onOpen: (id: string) => void; onRefresh: () => void; onLogout: () => void }) {
   const [leaving, setLeaving] = useState(false);
   const now = Date.now();
   const urgent = overview.agents.filter(needsYou);
@@ -72,11 +82,12 @@ function Agents({ overview, offline, onLogout }: { overview: Overview; offline: 
       <span className={`phone-link ${offline ? 'tone-error' : 'tone-done'}`} role="status"><i />{offline ? 'Sem conexão' : 'Conectado'}</span>
     </header>
     {offline && <p className="phone-banner">Não foi possível falar com o computador. Confira se ele está ligado, com o Athenas aberto, e se o Tailscale está ativo. A lista abaixo pode estar desatualizada.</p>}
-    {urgent.length > 0 && <section><h2>Precisam de você</h2><ul>{urgent.map((agent) => <Card key={agent.id} agent={agent} now={now} />)}</ul></section>}
-    {others.length > 0 && <section><h2>{urgent.length > 0 ? 'Outros agentes' : 'Em execução'}</h2><ul>{others.map((agent) => <Card key={agent.id} agent={agent} now={now} />)}</ul></section>}
+    {!overview.canControl && <p className="phone-banner">Para abrir conversas, enviar mensagens e aprovar, libere este aparelho no computador: <b>Ajustes → Celular → Pode conversar e aprovar</b>.</p>}
+    <Notifications registered={overview.notifications} onChange={onRefresh} />
+    {urgent.length > 0 && <section><h2>Precisam de você</h2><ul>{urgent.map((agent) => <Card key={agent.id} agent={agent} now={now} onOpen={overview.canControl ? onOpen : undefined} />)}</ul></section>}
+    {others.length > 0 && <section><h2>{urgent.length > 0 ? 'Outros agentes' : 'Em execução'}</h2><ul>{others.map((agent) => <Card key={agent.id} agent={agent} now={now} onOpen={overview.canControl ? onOpen : undefined} />)}</ul></section>}
     {overview.agents.length === 0 && <p className="phone-empty">Nenhum agente em execução no momento.</p>}
     <footer>
-      <p>Nesta versão o celular só mostra os agentes. Mensagens e aprovações continuam no computador.</p>
       {leaving
         ? <div className="phone-actions"><button type="button" onClick={() => setLeaving(false)}>Cancelar</button><button type="button" className="danger" onClick={onLogout}>Confirmar desconexão</button></div>
         : <button type="button" onClick={() => setLeaving(true)}>Desconectar este aparelho</button>}
@@ -96,6 +107,20 @@ export function PhoneApp() {
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const code = useRef<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  /** The open agent as last listed, so its conversation survives the agent ending. */
+  const shown = useRef<AgentCard | null>(null);
+
+  // Android's back button leaves the conversation instead of the app.
+  const open = useCallback((id: string) => {
+    if (window.history.state?.agent) window.history.replaceState({ agent: id }, '');
+    else window.history.pushState({ agent: id }, '');
+    setSelected(id);
+  }, []);
+  const back = useCallback(() => {
+    if (window.history.state?.agent) window.history.back();
+    else setSelected(null);
+  }, []);
 
   /** `justPaired` is what to say if the computer does not recognise a device it has just accepted. */
   const load = useCallback(async (justPaired?: string) => {
@@ -124,13 +149,37 @@ export function PhoneApp() {
   }, []);
 
   useEffect(() => {
-    code.current = takeCode();
+    code.current = takeCode() ?? code.current;
+    const tapped = takeAgent();
+    if (tapped) open(tapped);
+    registerWorker();
     void load();
-    // Scanning again with the page already open only changes the part after `#`.
-    const scanned = () => { const next = takeCode(); if (next) { code.current = next; setError(''); void load(); } };
+    // Scanning again, or tapping a notification, with the page already open only changes the part after `#`.
+    const scanned = () => {
+      const next = takeCode();
+      if (next) { code.current = next; setError(''); void load(); }
+      const agent = takeAgent();
+      if (agent) open(agent);
+    };
+    const moved = (event: PopStateEvent) => setSelected((event.state as { agent?: string } | null)?.agent ?? null);
+    const told = (event: MessageEvent) => {
+      if (event.data?.type !== 'open-agent' || typeof event.data.session !== 'string') return;
+      open(event.data.session);
+      void load();
+    };
     window.addEventListener('hashchange', scanned);
-    return () => window.removeEventListener('hashchange', scanned);
-  }, [load]);
+    window.addEventListener('popstate', moved);
+    navigator.serviceWorker?.addEventListener('message', told);
+    return () => {
+      window.removeEventListener('hashchange', scanned);
+      window.removeEventListener('popstate', moved);
+      navigator.serviceWorker?.removeEventListener('message', told);
+    };
+  }, [load, open]);
+
+  // A notification tapped on a locked device must not open the conversation later, out of nowhere.
+  const locked = overview !== null && !overview.canControl;
+  useEffect(() => { if (locked && selected) back(); }, [locked, selected, back]);
 
   // Keeps the list fresh while the page is on screen, and retries a first load that failed.
   const polling = screen.kind === 'agents' || (screen.kind === 'loading' && offline);
@@ -191,10 +240,16 @@ export function PhoneApp() {
   };
 
   const logout = () => void api.logout()
-    .then(() => { setOverview(null); setScreen({ kind: 'unpaired', message: 'Aparelho desconectado.' }); })
+    .then(() => { void dropLocal().catch(() => undefined); setOverview(null); setSelected(null); setScreen({ kind: 'unpaired', message: 'Aparelho desconectado.' }); })
     .catch(() => setOffline(true));
 
-  if (screen.kind === 'agents' && overview) return <Agents overview={overview} offline={offline} onLogout={logout} />;
+  if (screen.kind === 'agents' && overview) {
+    const listed = overview.agents.find((agent) => agent.id === selected);
+    if (listed) shown.current = listed;
+    const agent = listed ?? (shown.current?.id === selected ? shown.current : null);
+    if (agent && overview.canControl) return <ConversationView key={agent.id} agent={agent} ended={!listed} onBack={back} onUnauthorized={() => { setSelected(null); void load(); }} />;
+    return <Agents overview={overview} offline={offline} onOpen={open} onRefresh={() => void load()} onLogout={logout} />;
+  }
   if (screen.kind === 'offer') return <Notice title="Parear este aparelho">
     <p>Dê um nome para reconhecê-lo no computador.</p>
     <form onSubmit={pair}>

@@ -133,9 +133,21 @@ fn submit_keys(agent: &str) -> &'static [&'static str] {
 
 /// Types `payload` into a running session and submits it.
 pub(crate) fn submit(state: &crate::terminal::TerminalState, id: &str, agent: &str, payload: &str) -> Result<(), String> {
+    submit_unless(state, id, agent, payload, || false)
+}
+
+/// Like [`submit`], but holds back the keys that send the text if `asking` turns true after it was typed:
+/// the Enter would answer the question instead of sending the message.
+pub(crate) fn submit_unless(state: &crate::terminal::TerminalState, id: &str, agent: &str, payload: &str, asking: impl Fn() -> bool) -> Result<(), String> {
+    // The text and its Enter are separate writes; another message must not land between them.
+    static TYPING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _typing = TYPING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     crate::terminal::write_session(state, id, payload)?;
     for key in submit_keys(agent) {
         thread::sleep(Duration::from_millis(150));
+        if asking() {
+            return Err("O agente fez um pedido enquanto a mensagem era digitada, então ela não foi enviada. Responda o pedido e confira o texto no terminal.".into());
+        }
         crate::terminal::write_session(state, id, key)?;
     }
     Ok(())

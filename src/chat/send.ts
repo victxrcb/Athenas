@@ -23,6 +23,12 @@ export async function sendMessage(session: SessionInfo, body: string): Promise<b
       markReady(session.id);
     }
   } catch (error) { notice(String(error)); return false; }
+  markSent(session, body);
+  return true;
+}
+
+/** What the interface does once a message reached the agent, typed here or on a paired phone. */
+export function markSent(session: SessionInfo, body: string) {
   const command = body.trimStart().startsWith('/');
   if (!command) {
     addOutbox(session.id, body);
@@ -31,13 +37,16 @@ export async function sendMessage(session: SessionInfo, body: string): Promise<b
     // Codex has no prompt hook, so the session is named here.
     if (session.agent === 'Codex' && !session.title) void invoke('terminal_auto_title', { id: session.id, prompt: body }).catch(() => undefined);
   }
-  return true;
+}
+
+export function markInterrupted(id: string) {
+  useActivityStore.getState().set(id, { state: 'idle', since: Date.now(), unread: false, message: '' });
 }
 
 /** Esc is how both agents interrupt a turn. */
 export async function interrupt(session: SessionInfo) {
   try {
     await invoke('terminal_write', { id: session.id, data: '\x1b' });
-    useActivityStore.getState().set(session.id, { state: 'idle', since: Date.now(), unread: false, message: '' });
+    markInterrupted(session.id);
   } catch (error) { notice(String(error)); }
 }
