@@ -28,6 +28,7 @@ import { useReminderEvents } from './reminders';
 import { loadTabOrder, moveTab, saveTabOrder, sortTabs } from './tabOrder';
 import { SessionSurface } from './chat/SessionSurface';
 import { useChatEvents } from './chat/sync';
+import { useMobilePublish } from './mobile/publish';
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { lazy, Suspense } from 'react';
@@ -278,6 +279,7 @@ export function App() {
   useChatEvents();
   useActivityTracking();
   useMappingEventTracking();
+  useMobilePublish();
   useScheduleEvents();
   useReminderEvents();
   useEffect(() => { if (isTauri()) void invoke<import('./store').Preferences>('settings_get').then(state.setPreferences).catch((error) => state.setNotice(String(error))); }, [state.setPreferences, state.setNotice]);

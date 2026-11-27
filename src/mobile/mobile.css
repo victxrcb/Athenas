@@ -1,0 +1,24 @@
+/* "Celular" block of the settings */
+.mobile-settings { grid-column: 1 / -1; display: grid; gap: 8px; }
+.mobile-settings > span { font-size: var(--fs-xs); font-weight: 500; color: var(--text-dim); }
+.mobile-box { display: grid; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--fs-sm); }
+.mobile-box p { margin: 0; }
+.mobile-box small { display: block; font-size: var(--fs-2xs); font-weight: 400; color: var(--text-muted); }
+.settings-grid .mobile-toggle { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-sm); font-weight: 400; color: var(--text); }
+.mobile-toggle input { margin-top: 2px; }
+.mobile-error { padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--error) 35%, transparent); border-radius: var(--r-sm); background: color-mix(in srgb, var(--error) 10%, transparent); color: color-mix(in srgb, var(--error) 80%, var(--text)); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.mobile-steps, .mobile-devices ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.mobile-steps li { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--text-muted); }
+.mobile-steps li[data-done="true"] { color: var(--text); }
+.mobile-steps li[data-done="true"] svg { color: var(--st-done); }
+.mobile-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.mobile-address { font-size: var(--fs-xs); color: var(--text-dim); overflow-wrap: anywhere; }
+.mobile-pairing { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); }
+.mobile-pairing > div { flex: 1; min-width: 200px; display: grid; gap: 8px; }
+.mobile-pairing p { font-size: var(--fs-xs); color: var(--text-dim); }
+.mobile-qr { width: 180px; height: 180px; flex: none; border-radius: var(--r-sm); }
+.mobile-request { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--focus); border-radius: var(--r-sm); background: var(--surface-0); }
+.mobile-request b { font-family: var(--font-mono); font-size: var(--fs-lg); color: var(--text); white-space: nowrap; }
+.mobile-devices { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border); }
+.mobile-devices li { display: flex; align-items: center; gap: 8px; }
+.mobile-devices li > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }

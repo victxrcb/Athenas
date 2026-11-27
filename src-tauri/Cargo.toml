@@ -1,6 +1,6 @@
 [package]
 name = "athenas-agent"
-version = "0.1.32"
+version = "0.1.33"
 license = "MIT"
 description = "Local desktop workspace for coding agents"
 authors = ["Athenas Agent"]
@@ -27,6 +27,14 @@ shell-words = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 sysinfo = "0.31.4"
 toml = "0.9"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
+tokio = { version = "1", features = ["net", "sync", "rt"] }
+sha2 = "0.10"
+getrandom = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_Storage_FileSystem"] }

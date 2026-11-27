@@ -4,6 +4,7 @@ mod history;
 pub mod links;
 mod live;
 mod mcp_config;
+mod mobile;
 pub mod notify;
 pub mod orchestrator;
 mod reminders;
@@ -92,6 +93,8 @@ pub fn run() {
             reminders.start(app.handle().clone());
             app.manage(reminders);
             app.manage(history::HistoryIndex::new(&app.handle()).map_err(std::io::Error::other)?);
+            app.manage(mobile::MobileState::new(&app.handle()).map_err(std::io::Error::other)?);
+            mobile::start(app.handle().clone());
             // Build the conversation index early so the first search is fast.
             let warm = app.handle().clone();
             std::thread::spawn(move || {
@@ -189,8 +192,21 @@ pub fn run() {
             reminders::reminder_update,
             reminders::reminder_delete,
             settings::settings_get,
-            settings::settings_save
+            settings::settings_save,
+            mobile::mobile_state,
+            mobile::mobile_tailscale,
+            mobile::mobile_set_enabled,
+            mobile::mobile_pairing_start,
+            mobile::mobile_pairing_cancel,
+            mobile::mobile_pairing_decide,
+            mobile::mobile_revoke,
+            mobile::mobile_publish
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to start Athenas Agent");
+        .build(tauri::generate_context!())
+        .expect("failed to start Athenas Agent")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                mobile::shutdown(app);
+            }
+        });
 }

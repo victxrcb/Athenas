@@ -541,6 +541,12 @@ pub fn running_target(state: &TerminalState, id: &str) -> Option<(String, String
     })
 }
 
+/// Sessions whose process is starting or running, in the order they were created.
+pub fn live_sessions(state: &TerminalState) -> Vec<SessionInfo> {
+    let Ok(saved) = state.saved.lock() else { return Vec::new() };
+    saved.iter().filter(|item| item.status == "rodando" || item.status == "iniciando").cloned().collect()
+}
+
 /// When the process of a running session was started.
 pub fn running_since(state: &TerminalState, id: &str) -> Option<SystemTime> {
     let session = state.sessions.lock().ok()?.get(id)?.clone();

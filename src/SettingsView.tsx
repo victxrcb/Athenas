@@ -10,6 +10,7 @@ import { SIDEBAR_ITEMS, setSidebarHidden, setSidebarItem, useSidebarPrefs } from
 import { DEFAULT_MASCOT, MASCOT_COLORS, MASCOT_EYES, MASCOT_OUTFITS, saveMascot, useMascot } from './mascot';
 import { MascotIcon } from './MascotIcon';
 import { setNotificationsEnabled, useNotificationsEnabled } from './notifications';
+import { MobileSettings } from './mobile/MobileSettings';
 
 export function SettingsView() {
   const { settingsOpen, setSettingsOpen, preferences, setPreferences, setNotice } = useAppStore();
@@ -92,6 +93,7 @@ export function SettingsView() {
             <small>Escolha os atalhos exibidos na navegação. Atalho para ocultar/mostrar: <kbd>Ctrl B</kbd></small>
           </div>
         </div>
+        <MobileSettings />
         <label className="settings-check"><input type="checkbox" checked={notificationsEnabled} onChange={(event) => setNotificationsEnabled(event.target.checked)} /> Notificar quando um agente terminar ou pedir aprovação</label>
         <label className="settings-check"><input type="checkbox" checked={draft.reducedEffects} onChange={(event) => setDraft((current) => ({ ...current, reducedEffects: event.target.checked }))} /> Fundo ASCII na tela inicial</label></div>
       <div className="modal-footer"><span /><div><button type="button" className="button-quiet" onClick={() => setSettingsOpen(false)}>Cancelar</button><button className="button-primary" disabled={saving}>Salvar</button></div></div>
